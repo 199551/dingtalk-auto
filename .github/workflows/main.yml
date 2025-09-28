@@ -1,12 +1,14 @@
-name: DingTalk Monthly Report
+name: 泵设备切换提醒
 on:
   schedule:
-    - cron: '0 1 1 * *'
-  workflow_dispatch:
+    # 每月15号和30号中午12点执行 (UTC+8 北京时间)
+    - cron: '0 4 15 * *'  # 每月15号 UTC 4:00 = 北京时间12:00
+    - cron: '0 4 30 * *'  # 每月30号 UTC 4:00 = 北京时间12:00
+  workflow_dispatch:  # 允许手动触发测试
 jobs:
-  send-message:
+  send-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: Send DingTalk Message
+      - name: 发送泵设备切换提醒
         run: |
-          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：月度报告测试消息"}}' "${{ secrets.DINGTALK_WEBHOOK }}"
+          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：减一泵切至工频泵，运行24小时切回"}}' "${{ secrets.DINGTALK_WEBHOOK }}"
