@@ -18,7 +18,7 @@ jobs:
           # 发送钉钉消息
           curl -X POST \
           -H "Content-Type: application/json" \
-          -d '{"msgtype":"text","text":{"content":"注意：每月15日，30日减一泵切至工频泵，运行24小时切回"}}' \
+          -d '{"msgtype":"text","text":{"content":"注意：每月15日，30日11:00班减一泵切至工频泵，运行24小时切回"}}' \
           "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
           
           echo "提醒消息已发送"
