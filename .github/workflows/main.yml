@@ -1,0 +1,12 @@
+name: DingTalk Monthly Report
+on:
+  schedule:
+    - cron: '0 1 1 * *'
+  workflow_dispatch:
+jobs:
+  send-message:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send DingTalk Message
+        run: |
+          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：月度报告测试消息"}}' "${{ secrets.DINGTALK_WEBHOOK }}"
