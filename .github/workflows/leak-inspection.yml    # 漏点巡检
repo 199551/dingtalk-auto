@@ -1,0 +1,18 @@
+name: 月度漏点巡检提醒
+on:
+  schedule:
+    # 每月1日上午8:30执行 (UTC+8 北京时间) - 3:00班下班前提醒
+    - cron: '30 0 1 * *'  # 每月1号 UTC 0:30 = 北京时间8:30
+  workflow_dispatch:  # 允许手动触发测试
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发送漏点巡检提醒
+        run: |
+          echo "发送漏点巡检提醒..."
+          curl -X POST \
+          -H "Content-Type: application/json" \
+          -d '{"msgtype":"text","text":{"content":"注意：漏点巡检每月1日3:00班下班前上交给设备员。"}}' \
+          "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+          echo "提醒消息已发送"
