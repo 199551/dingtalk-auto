@@ -14,9 +14,9 @@ jobs:
           CURRENT_DAY=$(date +%d)
           NEXT_DAY=$(date -d "tomorrow" +%d)
           
-          # 如果明天是1号，那么今天就是最后一天
-          if [ "$NEXT_DAY" = "01" ]; then
-            echo "今天是当月最后一天，发送提醒..."
+          # 如果明天是1号，那么今天就是最后一天 或者 是手动触发
+          if [ "$NEXT_DAY" = "01" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "发送提醒（最后一天或手动触发）..."
             curl -X POST \
             -H "Content-Type: application/json" \
             -d '{"msgtype":"text","text":{"content":"注意：机泵盘车、特种设备巡检每月最后一天11：00班下班前上交给设备员。"}}' \
