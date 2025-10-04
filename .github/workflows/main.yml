@@ -11,14 +11,24 @@ jobs:
     steps:
       - name: 发送泵设备切换提醒
         run: |
-          # 获取当前日期
+          # 获取当前日期和时间
           CURRENT_DATE=$(date +"%Y-%m-%d")
+          CURRENT_HOUR=$(date +%H)
+          
           echo "执行日期: $CURRENT_DATE"
+          echo "当前小时: $CURRENT_HOUR"
           
-          # 发送钉钉消息
-          curl -X POST \
-          -H "Content-Type: application/json" \
-          -d '{"msgtype":"text","text":{"content":"注意：每月15日，30日11:00班减一泵切至工频泵，运行24小时切回"}}' \
-          "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
-          
-          echo "提醒消息已发送"
+          # 判断当前是否在上班（中午12点在11:00-20:00班次）
+          if [ "$CURRENT_HOUR" = "12" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "当前是中午12点，正在上11:00-20:00班次，发送提醒..."
+            
+            # 发送钉钉消息
+            curl -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"msgtype":"text","text":{"content":"注意：每月15日，30日11:00班减一泵切至工频泵，运行24小时切回"}}' \
+            "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+            
+            echo "提醒消息已发送"
+          else
+            echo "当前不是中午12点，不在11:00-20:00班次工作时间，跳过发送"
+          fi
