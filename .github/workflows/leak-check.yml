@@ -1,12 +1,27 @@
 name: 月度漏点巡检提醒
 on:
   schedule:
-    - cron: '30 0 1 * *'
-  workflow_dispatch:
+    # 每月1日上午8:30执行 (UTC+8 北京时间)
+    - cron: '30 0 1 * *'  # 每月1号 UTC 0:30 = 北京时间8:30
+  workflow_dispatch:  # 允许手动触发测试
 jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
       - name: 发送漏点巡检提醒
         run: |
-          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：漏点巡检每月1日3:00班下班前上交给设备员。"}}' "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+          # 获取当前小时
+          CURRENT_HOUR=$(date +%H)
+          echo "当前时间: $(date)"
+          echo "当前小时: $CURRENT_HOUR"
+          
+          # 判断当前是否在上班（上午8:30在3:00-11:00班次）
+          if [ "$CURRENT_HOUR" = "08" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "当前是上午8:30，正在上3:00-11:00班次，发送提醒..."
+            
+            curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：漏点巡检每月1日3:00班下班前上交给设备员。"}}' "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+            
+            echo "提醒消息已发送"
+          else
+            echo "当前不是上午8:30，不在3:00-11:00班次工作时间，跳过发送"
+          fi
