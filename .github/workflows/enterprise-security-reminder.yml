@@ -1,8 +1,8 @@
 name: 企安e学月度确认提醒
 on:
   schedule:
-    # 每月18日上午9:00执行 (UTC+8 北京时间)
-    - cron: '0 1 18 * *'  # 每月18号 UTC 1:00 = 北京时间9:00
+    # 每月10日上午10:00执行 (UTC+8 北京时间)
+    - cron: '0 2 10 * *'  # 每月10号 UTC 2:00 = 北京时间10:00
   workflow_dispatch:  # 允许手动触发测试
 jobs:
   send-reminder:
@@ -10,4 +10,4 @@ jobs:
     steps:
       - name: 发送企安e学确认提醒
         run: |
-          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：企安e学确认是否完成。"}}' "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+          curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：企安e学截至15日反馈完成。"}}' "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
