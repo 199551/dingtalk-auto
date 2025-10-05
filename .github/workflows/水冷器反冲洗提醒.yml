@@ -1,0 +1,37 @@
+name: 水冷器反冲洗提醒
+on:
+  schedule:
+    # 每天21:55检查 (UTC+8 北京时间)
+    - cron: '55 13 * * *'  # 每天 UTC 13:55 = 北京时间21:55
+  workflow_dispatch:  # 允许手动触发测试
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 水冷器反冲洗提醒
+        run: |
+          # 获取当前日期信息
+          CURRENT_DAY=$(date +%u)  # 1=周一, 7=周日
+          CURRENT_HOUR=$(date +%H)
+          
+          echo "当前时间: $(date)"
+          echo "星期: $CURRENT_DAY"
+          echo "当前小时: $CURRENT_HOUR"
+          
+          # 判断当前是否在上班（晚上22点在20:00-3:00班次）
+          if [ "$CURRENT_HOUR" = "22" ]; then
+            echo "当前是晚上22点，正在上20:00-3:00班次"
+            
+            # 判断是否是周日
+            if [ "$CURRENT_DAY" = "7" ]; then
+              echo "今天是周日，发送水冷器反冲洗提醒..."
+              curl -X POST -H "Content-Type: application/json" \
+                -d '{"msgtype":"text","text":{"content":"注意：今日周日，请进行水冷器反冲洗操作。\n\n📋 具体设备清单：\n• 沥青装置：常一、常二、常顶后冷E1136B\n• 沥青装置：减顶一级水冷EC1106AB\n• 减压装置：E190B减一水冷\n• 减压装置：E152AB一级抽空水冷器\n\n请按规程逐台进行反冲洗操作。"}}' \
+                "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+              echo "水冷器反冲洗提醒已发送"
+            else
+              echo "今天不是周日，不发送水冷器反冲洗提醒"
+            fi
+          else
+            echo "当前不是晚上22点，不在20:00-3:00班次工作时间"
+          fi
