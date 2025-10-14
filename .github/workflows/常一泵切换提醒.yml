@@ -1,4 +1,4 @@
-name: 常一泵切换智能提醒
+name: 精准常一泵切换提醒
 on:
   schedule:
     # 每天上午6:55检查 (UTC+8 北京时间)
@@ -8,24 +8,44 @@ jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: 常一泵切换智能提醒
+      - name: 精准常一泵切换提醒
         run: |
           # 获取当前日期信息
+          CURRENT_DATE=$(date +%Y-%m-%d)
           CURRENT_DAY=$(date +%u)  # 1=周一, 5=周五, 7=周日
           CURRENT_HOUR=$(date +%H)
-          CURRENT_DATE=$(date +%d)
-          CURRENT_MONTH=$(date +%m)
-          CURRENT_YEAR=$(date +%Y)
           
           echo "当前时间: $(date)"
-          echo "星期: $CURRENT_DAY"
           echo "日期: $CURRENT_DATE"
+          echo "星期: $CURRENT_DAY"
           echo "当前小时: $CURRENT_HOUR"
-          echo "年月: $CURRENT_YEAR-$CURRENT_MONTH"
           
-          # 判断当前是否在上班（上午7点在3:00-11:00班次）
-          if [ "$CURRENT_HOUR" = "07" ]; then
-            echo "当前是上午7点，正在上3:00-11:00班次"
+          # 基于排班表的精准班次判断
+          if [ "$CURRENT_DATE" = "2024-02-14" ]; then
+            TODAY_SHIFT="11:00-20:00"
+          elif [ "$CURRENT_DATE" = "2024-02-15" ]; then
+            TODAY_SHIFT="20:00-3:00"
+          elif [ "$CURRENT_DATE" = "2024-02-16" ]; then
+            TODAY_SHIFT="休息"
+          elif [ "$CURRENT_DATE" = "2024-02-17" ]; then
+            TODAY_SHIFT="3:00-11:00"
+          elif [ "$CURRENT_DATE" = "2024-02-18" ]; then
+            TODAY_SHIFT="11:00-20:00"
+          elif [ "$CURRENT_DATE" = "2024-02-19" ]; then
+            TODAY_SHIFT="20:00-3:00"
+          elif [ "$CURRENT_DATE" = "2024-02-20" ]; then
+            TODAY_SHIFT="休息"
+          elif [ "$CURRENT_DATE" = "2024-02-21" ]; then
+            TODAY_SHIFT="3:00-11:00"
+          else
+            TODAY_SHIFT="未知"
+          fi
+          
+          echo "今日班次: $TODAY_SHIFT"
+          
+          # 判断是否发送提醒（只在3:00-11:00班的周一/周五7点发送）
+          if [ "$TODAY_SHIFT" = "3:00-11:00" ] && [ "$CURRENT_HOUR" = "7" ]; then
+            echo "当前上3:00-11:00班，且是上午7点"
             
             # 周一常一泵切换提醒（变频）
             if [ "$CURRENT_DAY" = "1" ]; then
@@ -37,32 +57,14 @@ jobs:
             
             # 周五常一泵切换提醒（工频）
             elif [ "$CURRENT_DAY" = "5" ]; then
-              # 计算当月最后一天
-              LAST_DAY=$(date -d "$CURRENT_YEAR-$CURRENT_MONTH-01 +1 month -1 day" +%d)
-              # 计算最后一个周五的日期
-              LAST_FRIDAY=$(date -d "$CURRENT_YEAR-$CURRENT_MONTH-$LAST_DAY last fri" +%d)
-              
-              echo "当月最后一天: $LAST_DAY"
-              echo "最后一个周五: $LAST_FRIDAY"
-              echo "当前日期: $CURRENT_DATE"
-              
-              # 判断是否是当月最后一个周五
-              if [ "$CURRENT_DATE" = "$LAST_FRIDAY" ]; then
-                echo "今天是当月最后一个周五，发送常一泵工频切换和过滤器清理提醒..."
-                curl -X POST -H "Content-Type: application/json" \
-                  -d '{"msgtype":"text","text":{"content":"注意：今日周五，请将常一泵切换至工频运行模式，并清理常一泵过滤器。"}}' \
-                  "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
-                echo "周五常一泵工频+过滤器清理提醒已发送"
-              else
-                echo "今天是普通周五，发送常一泵工频切换提醒..."
-                curl -X POST -H "Content-Type: application/json" \
-                  -d '{"msgtype":"text","text":{"content":"注意：今日周五，请将常一泵切换至工频运行模式。"}}' \
-                  "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
-                echo "周五常一泵工频提醒已发送"
-              fi
+              echo "今天是周五，发送常一泵工频切换提醒..."
+              curl -X POST -H "Content-Type: application/json" \
+                -d '{"msgtype":"text","text":{"content":"注意：今日周五，请将常一泵切换至工频运行模式。"}}' \
+                "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+              echo "周五常一泵工频提醒已发送"
             else
               echo "今天不是周一或周五，不发送常一泵切换提醒"
             fi
           else
-            echo "当前不是上午7点，不在3:00-11:00班次工作时间"
+            echo "不满足提醒条件：班次=$TODAY_SHIFT, 小时=$CURRENT_HOUR"
           fi
