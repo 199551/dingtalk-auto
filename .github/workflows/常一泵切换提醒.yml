@@ -26,36 +26,24 @@ jobs:
           echo "当前小时: $CURRENT_HOUR"
           echo "当前分钟: $CURRENT_MINUTE"
           
-          # 基于4天严格循环的排班判断
-          # 起点：2025-10-17 = 3:00-11:00
-          # 循环：3:00-11:00 → 11:00-20:00 → 20:00-3:00 → 休息 → 循环
-          START_DATE="2025-10-17"  # 这是一个3:00-11:00班的日子
+          # 简化的4天循环排班
+          DAY_NUM=$(date +%d)
+          CYCLE=$(( (10#$DAY_NUM - 1) % 4 + 1 ))
+          echo "循环编号: $CYCLE"
           
-          # 计算从起点开始的天数差
-          START_SECONDS=$(date -d "$START_DATE" +%s)
-          CURRENT_SECONDS=$(date -d "$CURRENT_DATE" +%s)
-          DAYS_DIFF=$(( (CURRENT_SECONDS - START_SECONDS) / 86400 ))
-          
-          echo "距离起点天数差: $DAYS_DIFF"
-          
-          # 计算在4天循环中的位置
-          CYCLE_POSITION=$(( (DAYS_DIFF % 4 + 4) % 4 ))
-          
-          echo "循环位置: $CYCLE_POSITION"
-          
-          # 根据循环位置确定班次
-          case $CYCLE_POSITION in
-            0)
+          # 根据循环编号确定班次
+          case $CYCLE in
+            1)
               TODAY_SHIFT="3:00-11:00"
               ;;
-            1)
-              TODAY_SHIFT="11:00-20:00"
-              ;;
             2)
-              TODAY_SHIFT="20:00-3:00"
+              TODAY_SHIFT="11:00-20:00"
               ;;
             3)
               TODAY_SHIFT="休息"
+              ;;
+            4)
+              TODAY_SHIFT="20:00-3:00"
               ;;
             *)
               TODAY_SHIFT="未知"
@@ -63,26 +51,6 @@ jobs:
           esac
           
           echo "今日班次: $TODAY_SHIFT"
-          
-          # 调试信息：显示未来几天的排班
-          echo "=== 未来几天排班预览 ==="
-          for i in 0 1 2 3 4 5 6; do
-            FUTURE_DATE=$(date -d "$CURRENT_DATE +$i days" +%Y-%m-%d)
-            FUTURE_SECONDS=$(date -d "$FUTURE_DATE" +%s)
-            FUTURE_DAYS_DIFF=$(( (FUTURE_SECONDS - START_SECONDS) / 86400 ))
-            FUTURE_POSITION=$(( (FUTURE_DAYS_DIFF % 4 + 4) % 4 ))
-            
-            case $FUTURE_POSITION in
-              0) FUTURE_SHIFT="3:00-11:00" ;;
-              1) FUTURE_SHIFT="11:00-20:00" ;;
-              2) FUTURE_SHIFT="20:00-3:00" ;;
-              3) FUTURE_SHIFT="休息" ;;
-              *) FUTURE_SHIFT="未知" ;;
-            esac
-            
-            echo "$FUTURE_DATE: $FUTURE_SHIFT"
-          done
-          echo "========================"
           
           # 判断是否发送提醒（只在3:00-11:00班的周一/周五9:26发送）
           if [ "$TODAY_SHIFT" = "3:00-11:00" ] && [ "$CURRENT_HOUR" = "09" ] && [ "$CURRENT_MINUTE" = "26" ]; then
