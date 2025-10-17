@@ -28,12 +28,21 @@ jobs:
           
           # 基于4天循环排班表的精准班次判断
           # 排班循环：3:00-11:00 → 11:00-20:00 → 20:00-3:00 → 休息 → 循环
-          # 以2025年10月17日为起点（3:00-11:00班）
-          START_DATE="2025-10-17"
+          # 使用固定起点日期计算循环
+          START_DATE="2025-10-17"  # 这是一个3:00-11:00班的日子
           DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           
-          # 计算在4天循环中的位置
-          CYCLE_POSITION=$(( (DAYS_DIFF % 4 + 4) % 4 ))  # 处理负数情况
+          echo "距离起点天数差: $DAYS_DIFF"
+          
+          # 计算在4天循环中的位置（处理负数）
+          if [ $DAYS_DIFF -lt 0 ]; then
+            # 如果当前日期在起点之前，使用模运算处理
+            CYCLE_POSITION=$(( (4 - ((-DAYS_DIFF) % 4)) % 4 ))
+          else
+            CYCLE_POSITION=$(( DAYS_DIFF % 4 ))
+          fi
+          
+          echo "循环位置: $CYCLE_POSITION"
           
           # 根据循环位置确定班次
           case $CYCLE_POSITION in
@@ -55,8 +64,6 @@ jobs:
           esac
           
           echo "今日班次: $TODAY_SHIFT"
-          echo "距离起点天数差: $DAYS_DIFF"
-          echo "循环位置: $CYCLE_POSITION"
           
           # 判断是否发送提醒（只在3:00-11:00班的周一/周五9:26发送）
           if [ "$TODAY_SHIFT" = "3:00-11:00" ] && [ "$CURRENT_HOUR" = "09" ] && [ "$CURRENT_MINUTE" = "26" ]; then
