@@ -1,8 +1,8 @@
 name: 精准常一泵切换提醒
 on:
   schedule:
-    # 每天上午9:22检查 (UTC+8 北京时间)
-    - cron: '22 1 * * *'  # 每天 UTC 01:22 = 北京时间9:22
+    # 每天上午9:26检查 (UTC+8 北京时间)
+    - cron: '26 1 * * *'  # 每天 UTC 01:26 = 北京时间9:26
   workflow_dispatch:  # 允许手动触发测试
 jobs:
   send-reminder:
@@ -17,12 +17,14 @@ jobs:
           CURRENT_DATE=$(date +%Y-%m-%d)
           CURRENT_DAY=$(date +%u)  # 1=周一, 5=周五, 7=周日
           CURRENT_HOUR=$(date +%H)
+          CURRENT_MINUTE=$(date +%M)
           CURRENT_TIME=$(date)
           
           echo "当前时间(北京时间): $CURRENT_TIME"
           echo "日期: $CURRENT_DATE"
           echo "星期: $CURRENT_DAY"
           echo "当前小时: $CURRENT_HOUR"
+          echo "当前分钟: $CURRENT_MINUTE"
           
           # 基于4天循环排班表的精准班次判断
           # 排班循环：3:00-11:00 → 11:00-20:00 → 20:00-3:00 → 休息 → 循环
@@ -56,15 +58,15 @@ jobs:
           echo "距离起点天数差: $DAYS_DIFF"
           echo "循环位置: $CYCLE_POSITION"
           
-          # 判断是否发送提醒（只在3:00-11:00班的周一/周五9:22发送）
-          if [ "$TODAY_SHIFT" = "3:00-11:00" ] && [ "$CURRENT_HOUR" = "09" ]; then
-            echo "当前上3:00-11:00班，且是上午9点(北京时间)"
+          # 判断是否发送提醒（只在3:00-11:00班的周一/周五9:26发送）
+          if [ "$TODAY_SHIFT" = "3:00-11:00" ] && [ "$CURRENT_HOUR" = "09" ] && [ "$CURRENT_MINUTE" = "26" ]; then
+            echo "当前上3:00-11:00班，且是上午9:26(北京时间)"
             
             # 周一常一泵切换提醒（变频）
             if [ "$CURRENT_DAY" = "1" ]; then
               echo "今天是周一，发送常一泵变频切换提醒..."
               curl -X POST -H "Content-Type: application/json" \
-                -d '{"msgtype":"text","text":{"content":"🔔 精准常一泵切换提醒 🔔\n注意：今日周一，请将常一泵切换至变频运行模式。\n当前班次：3:00-11:00\n提醒时间：9:22"}}' \
+                -d '{"msgtype":"text","text":{"content":"🔔 精准常一泵切换提醒 🔔\n注意：今日周一，请将常一泵切换至变频运行模式。\n当前班次：3:00-11:00\n提醒时间：9:26"}}' \
                 "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
               echo "周一常一泵变频提醒已发送"
             
@@ -72,13 +74,13 @@ jobs:
             elif [ "$CURRENT_DAY" = "5" ]; then
               echo "今天是周五，发送常一泵工频切换提醒..."
               curl -X POST -H "Content-Type: application/json" \
-                -d '{"msgtype":"text","text":{"content":"🔔 精准常一泵切换提醒 🔔\n注意：今日周五，请将常一泵切换至工频运行模式。\n当前班次：3:00-11:00\n提醒时间：9:22"}}' \
+                -d '{"msgtype":"text","text":{"content":"🔔 精准常一泵切换提醒 🔔\n注意：今日周五，请将常一泵切换至工频运行模式。\n当前班次：3:00-11:00\n提醒时间：9:26"}}' \
                 "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
               echo "周五常一泵工频提醒已发送"
             else
               echo "今天不是周一或周五，不发送常一泵切换提醒"
             fi
           else
-            echo "不满足提醒条件：班次=$TODAY_SHIFT, 小时=$CURRENT_HOUR"
-            echo "需要条件：班次=3:00-11:00 且 小时=09(北京时间)"
+            echo "不满足提醒条件：班次=$TODAY_SHIFT, 小时=$CURRENT_HOUR, 分钟=$CURRENT_MINUTE"
+            echo "需要条件：班次=3:00-11:00 且 时间=09:26(北京时间)"
           fi
