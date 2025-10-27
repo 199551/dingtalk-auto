@@ -1,0 +1,119 @@
+name: 每日一学提醒
+on:
+  schedule:
+    # 每天在可能的下班时间前1小时执行
+    - cron: '0 2,10,19 * * *'  # 北京时间 10:00, 18:00, 03:00 (对应三个班次的下班前1小时)
+  workflow_dispatch:
+    inputs:
+      test_time:
+        description: '测试时间 (HH:MM)'
+        required: false
+        default: ''
+
+jobs:
+  daily-study-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 每日一学提醒
+        env:
+          DINGTALK_TOKEN: cfe74c285e2e30b46133eef62def804d28baef0d681a81ee0fdd1958fb13c877
+        run: |
+          # 设置时区
+          export TZ='Asia/Shanghai'
+          
+          # 处理手动输入的测试时间
+          if [ -n "${{ github.event.inputs.test_time }}" ]; then
+            TEST_TIME="${{ github.event.inputs.test_time }}"
+            echo "使用测试时间: $TEST_TIME"
+            CURRENT_HOUR=$(echo $TEST_TIME | cut -d: -f1)
+            CURRENT_MINUTE=$(echo $TEST_TIME | cut -d: -f2)
+            CURRENT_TIME=$TEST_TIME
+          else
+            CURRENT_HOUR=$(date +%H)
+            CURRENT_MINUTE=$(date +%M)
+            CURRENT_TIME=$(date +%H:%M)
+          fi
+          
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          CURRENT_WEEK=$(date +%u)
+          echo "当前时间(北京时间): $(date)"
+          echo "当前日期: $CURRENT_DATE"
+          echo "当前时分: $CURRENT_TIME"
+          
+          # 四班三倒循环计算
+          START_DATE="2025-10-27"  # 以今天为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          CYCLE_POS=$((DAYS_DIFF % 4))
+          
+          echo "从起始日相差天数: $DAYS_DIFF"
+          echo "周期位置: $CYCLE_POS (0=甲班, 1=休班, 2=乙班, 3=丙班)"
+          
+          # 判断今日班次
+          case $CYCLE_POS in
+            0)
+              TODAY_SHIFT="甲班 20:00-03:00"
+              SHIFT_END_HOUR=3
+              IS_WORKING=true
+              ;;
+            1)
+              TODAY_SHIFT="休班"
+              IS_WORKING=false
+              ;;
+            2)
+              TODAY_SHIFT="乙班 03:00-11:00"
+              SHIFT_END_HOUR=11
+              IS_WORKING=true
+              ;;
+            3)
+              TODAY_SHIFT="丙班 11:00-20:00"
+              SHIFT_END_HOUR=20
+              IS_WORKING=true
+              ;;
+          esac
+          
+          echo "今日班次: $TODAY_SHIFT"
+          
+          # 检查是否在上班且到了提醒时间
+          if [ "$IS_WORKING" = true ]; then
+            # 计算下班前1小时的时间
+            REMINDER_HOUR=$((SHIFT_END_HOUR - 1))
+            if [ $REMINDER_HOUR -lt 0 ]; then
+              REMINDER_HOUR=$((24 + REMINDER_HOUR))
+            fi
+            
+            echo "下班时间: $SHIFT_END_HOUR:00"
+            echo "提醒时间: $REMINDER_HOUR:00"
+            echo "当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
+            
+            # 检查当前是否在提醒时间
+            if [ "$CURRENT_HOUR" = "$REMINDER_HOUR" ] && [ "$CURRENT_MINUTE" = "00" ]; then
+              echo "✅ 到达提醒时间，发送每日一学提醒"
+              
+              # 添加星期信息
+              WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
+              WEEK_INDEX=$((CURRENT_WEEK - 1))
+              WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
+              
+              # 构建提醒内容
+              CONTENT="📚 每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
+              
+              # 发送钉钉提醒
+              curl -X POST -H "Content-Type: application/json" \
+                -d "{
+                  \"msgtype\": \"text\",
+                  \"text\": {
+                    \"content\": \"$CONTENT\"
+                  },
+                  \"at\": {
+                    \"isAtAll\": false
+                  }
+                }" \
+                "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+              
+              echo "✅ 每日一学提醒已发送"
+            else
+              echo "⏰ 未到提醒时间或不在准确时间点"
+            fi
+          else
+            echo "❌ 今日休班，不发送每日一学提醒"
+          fi
