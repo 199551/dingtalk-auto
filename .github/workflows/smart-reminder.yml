@@ -41,9 +41,21 @@ jobs:
           echo "当前日期: $CURRENT_DATE"
           echo "当前时分: $CURRENT_TIME"
           
-          # 四班三倒循环计算
-          START_DATE="2025-10-27"  # 以今天为甲班开始
-          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          # 处理跨天班次问题
+          # 如果当前时间是00:00-03:00，我们需要检查前一天是否是甲班
+          HOUR_NUM=$((10#$CURRENT_HOUR))
+          ADJUSTED_DATE="$CURRENT_DATE"
+          
+          if [ $HOUR_NUM -lt 3 ] || [ $HOUR_NUM -ge 20 ]; then
+            # 在甲班可能的工作时间段内，我们需要检查前一天是否是甲班
+            # 计算前一天的日期
+            ADJUSTED_DATE=$(date -d "yesterday" +%Y-%m-%d)
+            echo "调整日期为前一天: $ADJUSTED_DATE (处理跨天班次)"
+          fi
+          
+          # 四班三倒循环计算，使用调整后的日期
+          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$ADJUSTED_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
           echo "从起始日相差天数: $DAYS_DIFF"
@@ -126,7 +138,6 @@ jobs:
           
           # 改进的班次判断逻辑，处理跨天情况
           IS_WORKING_TIME=false
-          HOUR_NUM=$((10#$CURRENT_HOUR))
           
           if [ "$IS_WORKING" = true ]; then
             case $CYCLE_POS in
@@ -189,17 +200,4 @@ jobs:
             fi
           else
             echo "⏳ 不在任何提醒时间窗口内"
-            echo "调试信息:"
-            echo "  当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
-            echo "  当前总分钟: $current_total_minutes"
-            echo "  检查的时间点: ${!REMINDER_TIMES[@]}"
-            
-            # 显示每个时间点的计算详情
-            for time_key in "${!REMINDER_TIMES[@]}"; do
-              target_hour=$(echo $time_key | cut -d: -f1)
-              target_minute=$(echo $time_key | cut -d: -f2)
-              target_total_minutes=$((10#$target_hour * 60 + 10#$target_minute))
-              time_diff=$((current_total_minutes - target_total_minutes))
-              echo "  $time_key: 目标分钟=$target_total_minutes, 时间差=$time_diff"
-            done
           fi
