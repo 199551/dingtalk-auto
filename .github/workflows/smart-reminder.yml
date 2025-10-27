@@ -1,8 +1,9 @@
-name: 多时段智能提醒
+name: 智能巡检提醒
 on:
   schedule:
-    - cron: '*/10 16-23 * * *'
-    - cron: '*/10 0-15 * * *'
+    # 每10分钟执行一次，确保能覆盖前后5分钟的窗口
+    - cron: '*/10 16-23 * * *'  # UTC 16-23点每10分钟 (北京时间0-7点)
+    - cron: '*/10 0-15 * * *'   # UTC 0-15点每10分钟 (北京时间8-23点)
   workflow_dispatch:
     inputs:
       test_time:
@@ -14,7 +15,7 @@ jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: 多时段智能提醒
+      - name: 智能巡检提醒
         env:
           DINGTALK_TOKEN: cfe74c285e2e30b46133eef62def804d28baef0d681a81ee0fdd1958fb13c877
         run: |
@@ -40,9 +41,8 @@ jobs:
           echo "当前日期: $CURRENT_DATE"
           echo "当前时分: $CURRENT_TIME"
           
-          # 固定四班三倒循环计算
-          # 以2025年10月27日为甲班开始重新计算
-          START_DATE="2025-10-27"
+          # 四班三倒循环计算
+          START_DATE="2025-10-27"  # 以今天为甲班开始
           DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
@@ -71,7 +71,7 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 定义提醒时间点配置
+          # 定义提醒时间点配置（每2小时，除了20:30特殊）
           declare -A REMINDER_TIMES=(
             ["00:00"]="🕛 注意：线上巡检按时进行"
             ["02:00"]="🕑 注意：线上巡检按时进行" 
@@ -91,6 +91,8 @@ jobs:
           SHOULD_REMIND=false
           TARGET_TIME=""
           REMINDER_CONTENT=""
+          TIME_DIRECTION=""
+          MINUTES_AWAY=0
           
           for time_key in "${!REMINDER_TIMES[@]}"; do
             target_hour=$(echo $time_key | cut -d: -f1)
@@ -119,32 +121,70 @@ jobs:
             fi
           done
           
-          if [ "$SHOULD_REMIND" = true ] && [ "$IS_WORKING" = true ]; then
+          # 改进的班次判断逻辑，处理跨天情况
+          IS_WORKING_TIME=false
+          HOUR_NUM=$((10#$CURRENT_HOUR))
+          
+          if [ "$IS_WORKING" = true ]; then
+            case $CYCLE_POS in
+              0) # 甲班 20:00-03:00 (跨天班次)
+                if [ $HOUR_NUM -ge 20 ] || [ $HOUR_NUM -lt 3 ]; then
+                  IS_WORKING_TIME=true
+                  echo "✅ 当前在甲班工作时间 (20:00-03:00)"
+                fi
+                ;;
+              2) # 乙班 03:00-11:00
+                if [ $HOUR_NUM -ge 3 ] && [ $HOUR_NUM -lt 11 ]; then
+                  IS_WORKING_TIME=true
+                  echo "✅ 当前在乙班工作时间 (03:00-11:00)"
+                fi
+                ;;
+              3) # 丙班 11:00-20:00
+                if [ $HOUR_NUM -ge 11 ] && [ $HOUR_NUM -lt 20 ]; then
+                  IS_WORKING_TIME=true
+                  echo "✅ 当前在丙班工作时间 (11:00-20:00)"
+                fi
+                ;;
+            esac
+          fi
+          
+          if [ "$SHOULD_REMIND" = true ]; then
             echo "⏰ 在提醒时间窗口内: $TARGET_TIME ($TIME_DIRECTION${MINUTES_AWAY}分钟)"
-            echo "✅ 今日上班，发送提醒..."
             
-            # 添加星期信息
-            WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
-            WEEK_INDEX=$((CURRENT_WEEK - 1))
-            WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
-            
-            # 构建完整的提醒内容
-            if [ "$TIME_DIRECTION" = "前" ]; then
-              REMIND_TYPE="⏰ 即将到达巡检时段"
+            if [ "$IS_WORKING_TIME" = true ]; then
+              echo "✅ 当前在上班时间，发送提醒..."
+              
+              # 添加星期信息
+              WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
+              WEEK_INDEX=$((CURRENT_WEEK - 1))
+              WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
+              
+              # 构建完整的提醒内容
+              if [ "$TIME_DIRECTION" = "前" ]; then
+                REMIND_TYPE="⏰ 即将到达巡检时段"
+              else
+                REMIND_TYPE="⏰ 已过巡检时段"
+              fi
+              
+              FULL_CONTENT="$REMINDER_CONTENT\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME"
+              
+              # 发送钉钉提醒
+              curl -X POST -H "Content-Type: application/json" \
+                -d "{
+                  \"msgtype\": \"text\",
+                  \"text\": {
+                    \"content\": \"$FULL_CONTENT\"
+                  }
+                }" \
+                "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+              
+              echo "✅ 提醒已发送"
             else
-              REMIND_TYPE="⏰ 已过巡检时段"
+              echo "❌ 在提醒时间窗口内，但当前不在上班时间，跳过提醒"
             fi
-            
-            FULL_CONTENT="$REMINDER_CONTENT\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME"
-            
-            # 发送钉钉提醒
-            curl -X POST -H "Content-Type: application/json" \
-              -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"$FULL_CONTENT\"}}" \
-              "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
-            
-            echo "✅ 提醒已发送"
-          elif [ "$SHOULD_REMIND" = true ] && [ "$IS_WORKING" = false ]; then
-            echo "⏰ 在提醒时间窗口内，但今日休班，跳过提醒"
           else
             echo "⏳ 不在任何提醒时间窗口内"
+            echo "调试信息:"
+            echo "  当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
+            echo "  检查的时间点: ${!REMINDER_TIMES[@]}"
           fi
