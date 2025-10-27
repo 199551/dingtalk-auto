@@ -97,8 +97,8 @@ jobs:
             echo "提醒时间: $REMINDER_HOUR:00"
             echo "当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
             
-            # 检查当前是否在提醒时间
-            if [ "$CURRENT_HOUR" = "$REMINDER_HOUR" ] && [ "$CURRENT_MINUTE" = "00" ]; then
+            # 放宽时间条件：只要小时匹配就发送提醒（不检查分钟）
+            if [ "$CURRENT_HOUR" = "$REMINDER_HOUR" ]; then
               echo "✅ 到达提醒时间，发送每日一学提醒"
               
               # 添加星期信息
@@ -124,7 +124,7 @@ jobs:
               
               echo "✅ 每日一学提醒已发送"
             else
-              echo "⏰ 未到提醒时间或不在准确时间点"
+              echo "⏰ 未到提醒时间：当前小时 $CURRENT_HOUR，期望小时 $REMINDER_HOUR"
             fi
           else
             echo "❌ 今日休班，不发送每日一学提醒"
