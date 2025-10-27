@@ -11,70 +11,70 @@ on:
         default: ''
 
 jobs:
-  send-reminder:  # 改为英文job ID
+  send-reminder:
     runs-on: ubuntu-latest
     steps:
       - name: 多时段智能提醒
         env:
-          钉钉Token: cfe74c285e2e30b46133eef62def804d28baef0d681a81ee0fdd1958fb13c877
+          DINGTALK_TOKEN: cfe74c285e2e30b46133eef62def804d28baef0d681a81ee0fdd1958fb13c877
         run: |
           # 设置时区
           export TZ='Asia/Shanghai'
           
           # 处理手动输入的测试时间
           if [ -n "${{ github.event.inputs.test_time }}" ]; then
-            测试时间="${{ github.event.inputs.test_time }}"
-            echo "使用测试时间: $测试时间"
-            当前小时=$(echo $测试时间 | cut -d: -f1)
-            当前分钟=$(echo $测试时间 | cut -d: -f2)
-            当前时间=$测试时间
+            TEST_TIME="${{ github.event.inputs.test_time }}"
+            echo "使用测试时间: $TEST_TIME"
+            CURRENT_HOUR=$(echo $TEST_TIME | cut -d: -f1)
+            CURRENT_MINUTE=$(echo $TEST_TIME | cut -d: -f2)
+            CURRENT_TIME=$TEST_TIME
           else
-            当前小时=$(date +%H)
-            当前分钟=$(date +%M)
-            当前时间=$(date +%H:%M)
+            CURRENT_HOUR=$(date +%H)
+            CURRENT_MINUTE=$(date +%M)
+            CURRENT_TIME=$(date +%H:%M)
           fi
           
-          当前日期=$(date +%Y-%m-%d)
-          当前星期=$(date +%u)
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          CURRENT_WEEK=$(date +%u)
           echo "当前时间(北京时间): $(date)"
-          echo "当前日期: $当前日期"
-          echo "当前时分: $当前时间"
+          echo "当前日期: $CURRENT_DATE"
+          echo "当前时分: $CURRENT_TIME"
           
           # 修正日期计算
-          起始日期="2024-10-27"
-          今天日期=$(date +%Y-%m-%d)
+          START_DATE="2024-10-27"
+          TODAY_DATE=$(date +%Y-%m-%d)
           
           # 计算天数差
-          天数差=$(( ($(date -d "$今天日期" +%s) - $(date -d "$起始日期" +%s)) / 86400 ))
-          周期位置=$((天数差 % 4))
+          DAYS_DIFF=$(( ($(date -d "$TODAY_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          CYCLE_POS=$((DAYS_DIFF % 4))
           
-          echo "从起始日相差天数: $天数差"
-          echo "周期位置: $周期位置 (0=甲班, 1=休班, 2=乙班, 3=丙班)"
+          echo "从起始日相差天数: $DAYS_DIFF"
+          echo "周期位置: $CYCLE_POS (0=甲班, 1=休班, 2=乙班, 3=丙班)"
           
           # 判断今日班次
-          case $周期位置 in
+          case $CYCLE_POS in
             0)
-              今日班次="甲班 20:00-03:00"
-              是否上班=true
+              TODAY_SHIFT="甲班 20:00-03:00"
+              IS_WORKING=true
               ;;
             1)
-              今日班次="休班"
-              是否上班=false
+              TODAY_SHIFT="休班"
+              IS_WORKING=false
               ;;
             2)
-              今日班次="乙班 03:00-11:00"
-              是否上班=true
+              TODAY_SHIFT="乙班 03:00-11:00"
+              IS_WORKING=true
               ;;
             3)
-              今日班次="丙班 11:00-20:00"
-              是否上班=true
+              TODAY_SHIFT="丙班 11:00-20:00"
+              IS_WORKING=true
               ;;
           esac
           
-          echo "今日班次: $今日班次"
+          echo "今日班次: $TODAY_SHIFT"
           
           # 定义提醒时间点配置
-          declare -A 提醒时间表=(
+          declare -A REMINDER_TIMES=(
             ["00:00"]="🕛 注意：线上巡检按时进行"
             ["02:00"]="🕑 注意：线上巡检按时进行" 
             ["04:00"]="🕓 注意：线上巡检按时进行"
@@ -90,62 +90,62 @@ jobs:
           )
           
           # 检查是否在提醒时间点的前后5分钟内
-          是否提醒=false
-          目标时间=""
-          提醒内容=""
+          SHOULD_REMIND=false
+          TARGET_TIME=""
+          REMINDER_CONTENT=""
           
-          for 时间点 in "${!提醒时间表[@]}"; do
-            目标小时=$(echo $时间点 | cut -d: -f1)
-            目标分钟=$(echo $时间点 | cut -d: -f2)
+          for time_key in "${!REMINDER_TIMES[@]}"; do
+            target_hour=$(echo $time_key | cut -d: -f1)
+            target_minute=$(echo $time_key | cut -d: -f2)
             
-            目标总分钟=$((10#$目标小时 * 60 + 10#$目标分钟))
-            当前总分钟=$((10#$当前小时 * 60 + 10#$当前分钟))
-            时间差=$((当前总分钟 - 目标总分钟))
+            target_total_minutes=$((10#$target_hour * 60 + 10#$target_minute))
+            current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
+            time_diff=$((current_total_minutes - target_total_minutes))
             
             # 前后5分钟窗口
-            if [ $时间差 -ge -5 ] && [ $时间差 -le 5 ] && [ $时间差 -ne 0 ]; then
-              是否提醒=true
-              目标时间=$时间点
-              提醒内容="${提醒时间表[$时间点]}"
+            if [ $time_diff -ge -5 ] && [ $time_diff -le 5 ] && [ $time_diff -ne 0 ]; then
+              SHOULD_REMIND=true
+              TARGET_TIME=$time_key
+              REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
               
               # 判断是前5分钟还是后5分钟
-              if [ $时间差 -lt 0 ]; then
-                时间方向="前"
-                相差分钟=$((0 - $时间差))
+              if [ $time_diff -lt 0 ]; then
+                TIME_DIRECTION="前"
+                MINUTES_AWAY=$((0 - $time_diff))
               else
-                时间方向="后" 
-                相差分钟=$时间差
+                TIME_DIRECTION="后" 
+                MINUTES_AWAY=$time_diff
               fi
               
               break
             fi
           done
           
-          if [ "$是否提醒" = true ] && [ "$是否上班" = true ]; then
-            echo "⏰ 在提醒时间窗口内: $目标时间 ($时间方向${相差分钟}分钟)"
+          if [ "$SHOULD_REMIND" = true ] && [ "$IS_WORKING" = true ]; then
+            echo "⏰ 在提醒时间窗口内: $TARGET_TIME ($TIME_DIRECTION${MINUTES_AWAY}分钟)"
             echo "✅ 今日上班，发送提醒..."
             
             # 添加星期信息
-            星期数组=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
-            星期索引=$((当前星期 - 1))
-            星期信息="${星期数组[$星期索引]}"
+            WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
+            WEEK_INDEX=$((CURRENT_WEEK - 1))
+            WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
             
             # 构建完整的提醒内容
-            if [ "$时间方向" = "前" ]; then
-              提醒类型="⏰ 即将到达巡检时段"
+            if [ "$TIME_DIRECTION" = "前" ]; then
+              REMIND_TYPE="⏰ 即将到达巡检时段"
             else
-              提醒类型="⏰ 已过巡检时段"
+              REMIND_TYPE="⏰ 已过巡检时段"
             fi
             
-            完整内容="$提醒内容\n$提醒类型\n📅 $当前日期 $星期信息\n👨‍💼 今日班次：$今日班次\n🎯 目标时间：$目标时间\n⏱️ 当前时间：$当前时间"
+            FULL_CONTENT="$REMINDER_CONTENT\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME"
             
             # 发送钉钉提醒
             curl -X POST -H "Content-Type: application/json" \
-              -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"$完整内容\"}}" \
-              "https://oapi.dingtalk.com/robot/send?access_token=$钉钉Token"
+              -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"$FULL_CONTENT\"}}" \
+              "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
             
             echo "✅ 提醒已发送"
-          elif [ "$是否提醒" = true ] && [ "$是否上班" = false ]; then
+          elif [ "$SHOULD_REMIND" = true ] && [ "$IS_WORKING" = false ]; then
             echo "⏰ 在提醒时间窗口内，但今日休班，跳过提醒"
           else
             echo "⏳ 不在任何提醒时间窗口内"
