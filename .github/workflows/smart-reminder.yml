@@ -11,7 +11,7 @@ on:
         default: ''
 
 jobs:
-  发送提醒:
+  send-reminder:  # 改为英文job ID
     runs-on: ubuntu-latest
     steps:
       - name: 多时段智能提醒
@@ -40,7 +40,7 @@ jobs:
           echo "当前日期: $当前日期"
           echo "当前时分: $当前时间"
           
-          # 修正日期计算 - 使用固定日期计算
+          # 修正日期计算
           起始日期="2024-10-27"
           今天日期=$(date +%Y-%m-%d)
           
