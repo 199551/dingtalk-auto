@@ -1,8 +1,8 @@
 name: 每日一学提醒
 on:
   schedule:
-    # 每天在可能的下班时间前1小时执行
-    - cron: '0 2,10,19 * * *'  # 北京时间 10:00, 18:00, 03:00 (对应三个班次的下班前1小时)
+    # 增加执行频率，覆盖下班前半小时至1小时的时间窗口
+    - cron: '*/15 1-2,9-10,18-19 * * *'  # 增加执行频率，覆盖下班前半小时至1小时
   workflow_dispatch:
     inputs:
       test_time:
@@ -85,29 +85,65 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 检查是否在上班且到了提醒时间
+          # 检查是否在上班
           if [ "$IS_WORKING" = true ]; then
-            # 计算下班前1小时的时间
-            REMINDER_HOUR=$((SHIFT_END_HOUR - 1))
-            if [ $REMINDER_HOUR -lt 0 ]; then
-              REMINDER_HOUR=$((24 + REMINDER_HOUR))
+            # 计算下班前1小时和半小时的时间
+            REMINDER_HOUR_START=$((SHIFT_END_HOUR - 1))
+            REMINDER_HOUR_END=$((SHIFT_END_HOUR - 0))
+            
+            # 处理跨天情况
+            if [ $REMINDER_HOUR_START -lt 0 ]; then
+              REMINDER_HOUR_START=$((24 + REMINDER_HOUR_START))
+            fi
+            if [ $REMINDER_HOUR_END -lt 0 ]; then
+              REMINDER_HOUR_END=$((24 + REMINDER_HOUR_END))
             fi
             
             echo "下班时间: $SHIFT_END_HOUR:00"
-            echo "提醒时间: $REMINDER_HOUR:00"
+            echo "提醒时间范围: $REMINDER_HOUR_START:00 - $REMINDER_HOUR_END:30 (下班前1小时至半小时)"
             echo "当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
             
-            # 放宽时间条件：只要小时匹配就发送提醒（不检查分钟）
-            if [ "$CURRENT_HOUR" = "$REMINDER_HOUR" ]; then
-              echo "✅ 到达提醒时间，发送每日一学提醒"
+            # 检查当前是否在提醒时间范围内（下班前1小时至半小时）
+            # 转换为分钟进行比较
+            current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
+            reminder_start_minutes=$((REMINDER_HOUR_START * 60))
+            reminder_end_minutes=$((REMINDER_HOUR_END * 60 + 30))
+            
+            # 处理跨天情况
+            if [ $reminder_start_minutes -gt $reminder_end_minutes ]; then
+              # 如果开始时间大于结束时间，说明跨天了
+              if [ $current_total_minutes -ge $reminder_start_minutes ] || [ $current_total_minutes -le $reminder_end_minutes ]; then
+                IN_REMINDER_WINDOW=true
+              else
+                IN_REMINDER_WINDOW=false
+              fi
+            else
+              # 正常情况，没有跨天
+              if [ $current_total_minutes -ge $reminder_start_minutes ] && [ $current_total_minutes -le $reminder_end_minutes ]; then
+                IN_REMINDER_WINDOW=true
+              else
+                IN_REMINDER_WINDOW=false
+              fi
+            fi
+            
+            if [ "$IN_REMINDER_WINDOW" = true ]; then
+              echo "✅ 在提醒时间窗口内，发送每日一学提醒"
               
               # 添加星期信息
               WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
               WEEK_INDEX=$((CURRENT_WEEK - 1))
               WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
               
+              # 计算距离下班还有多少分钟
+              if [ $SHIFT_END_HOUR -lt $HOUR_NUM ]; then
+                # 跨天情况
+                minutes_until_end=$(( (24 - HOUR_NUM + SHIFT_END_HOUR) * 60 - CURRENT_MINUTE ))
+              else
+                minutes_until_end=$(( (SHIFT_END_HOUR - HOUR_NUM) * 60 - CURRENT_MINUTE ))
+              fi
+              
               # 构建提醒内容
-              CONTENT="📚 每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
+              CONTENT="📚 每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n⏱️ 距离下班：约${minutes_until_end}分钟\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
               
               # 发送钉钉提醒
               curl -X POST -H "Content-Type: application/json" \
@@ -124,7 +160,7 @@ jobs:
               
               echo "✅ 每日一学提醒已发送"
             else
-              echo "⏰ 未到提醒时间：当前小时 $CURRENT_HOUR，期望小时 $REMINDER_HOUR"
+              echo "⏰ 不在提醒时间窗口内"
             fi
           else
             echo "❌ 今日休班，不发送每日一学提醒"
