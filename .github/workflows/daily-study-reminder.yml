@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: 每日一学提醒
         env:
-          DINGTALK_TOKEN: cfe74c285e2e30b46133eef62def804d28baef0d681a81ee0fdd1958fb13c877
+          DINGTALK_TOKEN: c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc
         run: |
           # 设置时区
           export TZ='Asia/Shanghai'
