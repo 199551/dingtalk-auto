@@ -102,19 +102,22 @@ jobs:
             current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
             time_diff=$((current_total_minutes - target_total_minutes))
             
-            # 前后5分钟窗口
-            if [ $time_diff -ge -5 ] && [ $time_diff -le 5 ] && [ $time_diff -ne 0 ]; then
+            # 前后5分钟窗口（包含0，即正好在时间点上）
+            if [ $time_diff -ge -5 ] && [ $time_diff -le 5 ]; then
               SHOULD_REMIND=true
               TARGET_TIME=$time_key
               REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
               
-              # 判断是前5分钟还是后5分钟
+              # 判断是前5分钟还是后5分钟或正好
               if [ $time_diff -lt 0 ]; then
                 TIME_DIRECTION="前"
                 MINUTES_AWAY=$((0 - $time_diff))
-              else
+              elif [ $time_diff -gt 0 ]; then
                 TIME_DIRECTION="后" 
                 MINUTES_AWAY=$time_diff
+              else
+                TIME_DIRECTION="正好"
+                MINUTES_AWAY=0
               fi
               
               break
@@ -162,8 +165,10 @@ jobs:
               # 构建完整的提醒内容
               if [ "$TIME_DIRECTION" = "前" ]; then
                 REMIND_TYPE="⏰ 即将到达巡检时段"
-              else
+              elif [ "$TIME_DIRECTION" = "后" ]; then
                 REMIND_TYPE="⏰ 已过巡检时段"
+              else
+                REMIND_TYPE="⏰ 正好在巡检时段"
               fi
               
               FULL_CONTENT="$REMINDER_CONTENT\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME"
@@ -186,5 +191,15 @@ jobs:
             echo "⏳ 不在任何提醒时间窗口内"
             echo "调试信息:"
             echo "  当前时间: $CURRENT_HOUR:$CURRENT_MINUTE"
+            echo "  当前总分钟: $current_total_minutes"
             echo "  检查的时间点: ${!REMINDER_TIMES[@]}"
+            
+            # 显示每个时间点的计算详情
+            for time_key in "${!REMINDER_TIMES[@]}"; do
+              target_hour=$(echo $time_key | cut -d: -f1)
+              target_minute=$(echo $time_key | cut -d: -f2)
+              target_total_minutes=$((10#$target_hour * 60 + 10#$target_minute))
+              time_diff=$((current_total_minutes - target_total_minutes))
+              echo "  $time_key: 目标分钟=$target_total_minutes, 时间差=$time_diff"
+            done
           fi
