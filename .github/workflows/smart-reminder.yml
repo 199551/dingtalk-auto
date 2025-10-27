@@ -40,12 +40,10 @@ jobs:
           echo "当前日期: $CURRENT_DATE"
           echo "当前时分: $CURRENT_TIME"
           
-          # 修正日期计算
-          START_DATE="2024-10-27"
-          TODAY_DATE=$(date +%Y-%m-%d)
-          
-          # 计算天数差
-          DAYS_DIFF=$(( ($(date -d "$TODAY_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          # 固定四班三倒循环计算
+          # 以2025年10月27日为甲班开始重新计算
+          START_DATE="2025-10-27"
+          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
           echo "从起始日相差天数: $DAYS_DIFF"
