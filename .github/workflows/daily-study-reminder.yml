@@ -40,9 +40,21 @@ jobs:
           echo "当前日期: $CURRENT_DATE"
           echo "当前时分: $CURRENT_TIME"
           
-          # 四班三倒循环计算
-          START_DATE="2025-10-27"  # 以今天为甲班开始
-          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          # 处理跨天班次问题
+          # 如果当前时间是00:00-03:00，我们需要检查前一天是否是甲班
+          HOUR_NUM=$((10#$CURRENT_HOUR))
+          ADJUSTED_DATE="$CURRENT_DATE"
+          
+          if [ $HOUR_NUM -lt 3 ] || [ $HOUR_NUM -ge 20 ]; then
+            # 在甲班可能的工作时间段内，我们需要检查前一天是否是甲班
+            # 计算前一天的日期
+            ADJUSTED_DATE=$(date -d "yesterday" +%Y-%m-%d)
+            echo "调整日期为前一天: $ADJUSTED_DATE (处理跨天班次)"
+          fi
+          
+          # 四班三倒循环计算，使用调整后的日期
+          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$ADJUSTED_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
           echo "从起始日相差天数: $DAYS_DIFF"
