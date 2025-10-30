@@ -1,7 +1,7 @@
 name: 智能巡检提醒
 on:
   schedule:
-    # 每10分钟执行一次，确保能覆盖前后5分钟的窗口
+    # 每10分钟执行一次，确保能覆盖前后10分钟的窗口
     - cron: '*/10 16-23 * * *'  # UTC 16-23点每10分钟 (北京时间0-7点)
     - cron: '*/10 0-15 * * *'   # UTC 0-15点每10分钟 (北京时间8-23点)
   workflow_dispatch:
@@ -99,7 +99,7 @@ jobs:
             ["22:00"]="🕙 注意：线上巡检按时进行"
           )
           
-          # 检查是否在提醒时间点的前后5分钟内
+          # 检查是否在提醒时间点的前后10分钟内
           SHOULD_REMIND=false
           TARGET_TIME=""
           REMINDER_CONTENT=""
@@ -114,13 +114,13 @@ jobs:
             current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
             time_diff=$((current_total_minutes - target_total_minutes))
             
-            # 前后5分钟窗口（包含0，即正好在时间点上）
-            if [ $time_diff -ge -5 ] && [ $time_diff -le 5 ]; then
+            # 前后10分钟窗口（包含0，即正好在时间点上）
+            if [ $time_diff -ge -10 ] && [ $time_diff -le 10 ]; then
               SHOULD_REMIND=true
               TARGET_TIME=$time_key
               REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
               
-              # 判断是前5分钟还是后5分钟或正好
+              # 判断是前10分钟还是后10分钟或正好
               if [ $time_diff -lt 0 ]; then
                 TIME_DIRECTION="前"
                 MINUTES_AWAY=$((0 - $time_diff))
