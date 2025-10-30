@@ -1,0 +1,208 @@
+name: 常一泵切换提醒
+
+on:
+  schedule:
+    # 每天在2:50、3:00、3:10执行，覆盖3:00前后10分钟
+    - cron: '50 18 * * *'  # UTC 18:50 = 北京时间2:50
+    - cron: '0 19 * * *'   # UTC 19:00 = 北京时间3:00  
+    - cron: '10 19 * * *'  # UTC 19:10 = 北京时间3:10
+  workflow_dispatch:
+    inputs:
+      test_date:
+        description: '测试日期 (YYYY-MM-DD)'
+        required: false
+        default: ''
+      test_time:
+        description: '测试时间 (HH:MM)'
+        required: false
+        default: '03:00'
+
+jobs:
+  pump-switch-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 常一泵切换提醒
+        env:
+          DINGTALK_TOKEN: ${{ secrets.DINGTALK_TOKEN }}
+        run: |
+          # 设置时区
+          export TZ='Asia/Shanghai'
+          
+          # 处理手动输入的测试时间和日期
+          if [ -n "${{ github.event.inputs.test_date }}" ] && [ -n "${{ github.event.inputs.test_time }}" ]; then
+            TEST_DATE="${{ github.event.inputs.test_date }}"
+            TEST_TIME="${{ github.event.inputs.test_time }}"
+            echo "使用测试日期: $TEST_DATE"
+            echo "使用测试时间: $TEST_TIME"
+            CURRENT_HOUR=$(echo $TEST_TIME | cut -d: -f1)
+            CURRENT_MINUTE=$(echo $TEST_TIME | cut -d: -f2)
+            CURRENT_TIME=$TEST_TIME
+            CURRENT_DATE=$TEST_DATE
+          else
+            CURRENT_HOUR=$(date +%H)
+            CURRENT_MINUTE=$(date +%M)
+            CURRENT_TIME=$(date +%H:%M)
+            CURRENT_DATE=$(date +%Y-%m-%d)
+          fi
+          
+          CURRENT_WEEK=$(date -d "$CURRENT_DATE" +%u)  # 1-7 周一到周日
+          CURRENT_DAY=$(date -d "$CURRENT_DATE" +%d)   # 日期
+          CURRENT_MONTH=$(date -d "$CURRENT_DATE" +%m) # 月份
+          CURRENT_YEAR=$(date -d "$CURRENT_DATE" +%Y)  # 年份
+          
+          echo "当前时间(北京时间): $(date)"
+          echo "当前日期: $CURRENT_DATE"
+          echo "当前时分: $CURRENT_TIME"
+          echo "当前星期: $CURRENT_WEEK (1=周一, 5=周五)"
+          echo "当前日期号: $CURRENT_DAY"
+          
+          # 处理跨天班次问题
+          # 如果当前时间是00:00-03:00，我们需要检查前一天是否是甲班
+          HOUR_NUM=$((10#$CURRENT_HOUR))
+          ADJUSTED_DATE="$CURRENT_DATE"
+          
+          if [ $HOUR_NUM -lt 3 ] || [ $HOUR_NUM -ge 20 ]; then
+            # 在甲班可能的工作时间段内，我们需要检查前一天是否是甲班
+            ADJUSTED_DATE=$(date -d "yesterday" -d "$CURRENT_DATE" +%Y-%m-%d)
+            echo "调整日期为前一天: $ADJUSTED_DATE (处理跨天班次)"
+          fi
+          
+          # 四班三倒循环计算，使用调整后的日期
+          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$ADJUSTED_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          CYCLE_POS=$((DAYS_DIFF % 4))
+          
+          echo "从起始日相差天数: $DAYS_DIFF"
+          echo "周期位置: $CYCLE_POS (0=甲班, 1=休班, 2=乙班, 3=丙班)"
+          
+          # 判断今日班次
+          case $CYCLE_POS in
+            0)
+              TODAY_SHIFT="甲班 20:00-03:00"
+              IS_WORKING=true
+              ;;
+            1)
+              TODAY_SHIFT="休班"
+              IS_WORKING=false
+              ;;
+            2)
+              TODAY_SHIFT="乙班 03:00-11:00"
+              IS_WORKING=true
+              ;;
+            3)
+              TODAY_SHIFT="丙班 11:00-20:00"
+              IS_WORKING=true
+              ;;
+          esac
+          
+          echo "今日班次: $TODAY_SHIFT"
+          
+          # 检查是否在3:00前后10分钟内
+          SHOULD_REMIND=false
+          TARGET_HOUR="03"
+          TARGET_MINUTE="00"
+          
+          target_total_minutes=$((10#$TARGET_HOUR * 60 + 10#$TARGET_MINUTE))
+          current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
+          time_diff=$((current_total_minutes - target_total_minutes))
+          
+          # 前后10分钟窗口（包含0，即正好在时间点上）
+          if [ $time_diff -ge -10 ] && [ $time_diff -le 10 ]; then
+            SHOULD_REMIND=true
+            echo "⏰ 在3:00前后10分钟窗口内"
+          else
+            echo "⏳ 不在3:00前后10分钟窗口内"
+          fi
+          
+          # 检查是否是周一或周五
+          IS_MONDAY_OR_FRIDAY=false
+          if [ $CURRENT_WEEK -eq 1 ] || [ $CURRENT_WEEK -eq 5 ]; then
+            IS_MONDAY_OR_FRIDAY=true
+            echo "✅ 今天是周一或周五"
+          else
+            echo "❌ 今天不是周一或周五"
+          fi
+          
+          # 判断是否是每月最后一个周五
+          IS_LAST_FRIDAY=false
+          if [ $CURRENT_WEEK -eq 5 ]; then
+            # 计算下一个周五的日期
+            NEXT_FRIDAY=$(date -d "$CURRENT_DATE +7 days" +%Y-%m-%d)
+            # 如果下一个周五的月份与当前月份不同，则当前是最后一个周五
+            CURRENT_MONTH=$(date -d "$CURRENT_DATE" +%m)
+            NEXT_FRIDAY_MONTH=$(date -d "$NEXT_FRIDAY" +%m)
+            if [ "$CURRENT_MONTH" != "$NEXT_FRIDAY_MONTH" ]; then
+              IS_LAST_FRIDAY=true
+              echo "✅ 今天是本月最后一个周五"
+            else
+              echo "❌ 今天不是本月最后一个周五"
+            fi
+          fi
+          
+          # 改进的班次判断逻辑，处理跨天情况
+          IS_WORKING_TIME=false
+          
+          if [ "$IS_WORKING" = true ]; then
+            case $CYCLE_POS in
+              0) # 甲班 20:00-03:00 (跨天班次)
+                if [ $HOUR_NUM -ge 20 ] || [ $HOUR_NUM -lt 3 ]; then
+                  IS_WORKING_TIME=true
+                  echo "✅ 当前在甲班工作时间 (20:00-03:00)"
+                fi
+                ;;
+              2) # 乙班 03:00-11:00
+                if [ $HOUR_NUM -ge 3 ] && [ $HOUR_NUM -lt 11 ]; then
+                  IS_WORKING_TIME=true
+                  echo "✅ 当前在乙班工作时间 (03:00-11:00)"
+                fi
+                ;;
+            esac
+          fi
+          
+          # 发送提醒的条件：在3:00窗口内 + 是周一或周五 + 在上班时间
+          if [ "$SHOULD_REMIND" = true ] && [ "$IS_MONDAY_OR_FRIDAY" = true ] && [ "$IS_WORKING_TIME" = true ]; then
+            echo "✅ 满足所有发送提醒条件"
+            
+            # 构建提醒内容
+            WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
+            WEEK_INDEX=$((CURRENT_WEEK - 1))
+            WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
+            
+            # 根据星期几确定操作内容
+            if [ $CURRENT_WEEK -eq 1 ]; then
+              # 周一
+              OPERATION="切换至变频"
+              REMIND_CONTENT="🔧 每周一3:00班 - 请将常一泵切换至变频运行"
+            elif [ $CURRENT_WEEK -eq 5 ]; then
+              # 周五
+              OPERATION="切换至工频"
+              REMIND_CONTENT="🔧 每周五3:00班 - 请将常一泵切换至工频运行"
+              
+              # 如果是最后一个周五，添加清理过滤器提醒
+              if [ "$IS_LAST_FRIDAY" = true ]; then
+                REMIND_CONTENT="$REMIND_CONTENT\n🧹 每月最后一个周五 - 请同时清理变频泵过滤器"
+              fi
+            fi
+            
+            # 构建完整消息
+            FULL_CONTENT="🏭 常一泵切换提醒\n$REMIND_CONTENT\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n⏰ 提醒时间：$CURRENT_TIME"
+            
+            echo "准备发送提醒: $OPERATION"
+            
+            # 发送钉钉提醒
+            curl -X POST -H "Content-Type: application/json" \
+              -d "{
+                \"msgtype\": \"text\",
+                \"text\": {
+                  \"content\": \"$FULL_CONTENT\"
+                }
+              }" \
+              "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+            
+            echo "✅ 常一泵切换提醒已发送"
+          else
+            echo "❌ 不满足发送提醒条件:"
+            echo "   在3:00窗口: $SHOULD_REMIND"
+            echo "   是周一/周五: $IS_MONDAY_OR_FRIDAY" 
+            echo "   在上班时间: $IS_WORKING_TIME"
+          fi
