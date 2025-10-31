@@ -1,9 +1,14 @@
 name: 泵设备切换提醒
 on:
   schedule:
-    # 每月15号和30号执行，覆盖11:00-20:00班次
-    - cron: '0 3-12 15,30 * *'  # UTC时间3-12点 = 北京时间11-20点，每月15和30号
+    # 每月15号和30号，每15分钟执行一次，覆盖14:40-15:20窗口
+    - cron: '*/15 6-8 15,30 * *'  # UTC时间6-8点 = 北京时间14-16点，每月15和30号
   workflow_dispatch:  # 允许手动触发测试
+    inputs:
+      test_time:
+        description: '测试时间 (HH:MM)'
+        required: false
+        default: ''
 
 jobs:
   pump-switch-reminder:
@@ -16,13 +21,22 @@ jobs:
           # 设置时区
           export TZ='Asia/Shanghai'
           
-          # 获取当前时间
-          CURRENT_HOUR=$(date +%H)
-          CURRENT_MINUTE=$(date +%M)
-          CURRENT_DATE=$(date +%Y-%m-%d)
-          CURRENT_TIME=$(date +%H:%M)
-          CURRENT_DAY=$(date +%d)
+          # 处理手动输入的测试时间
+          if [ -n "${{ github.event.inputs.test_time }}" ]; then
+            TEST_TIME="${{ github.event.inputs.test_time }}"
+            echo "使用测试时间: $TEST_TIME"
+            CURRENT_HOUR=$(echo $TEST_TIME | cut -d: -f1)
+            CURRENT_MINUTE=$(echo $TEST_TIME | cut -d: -f2)
+            CURRENT_TIME=$TEST_TIME
+          else
+            CURRENT_HOUR=$(date +%H)
+            CURRENT_MINUTE=$(date +%M)
+            CURRENT_TIME=$(date +%H:%M)
+          fi
           
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          CURRENT_DAY=$(date +%d)
+          CURRENT_WEEK=$(date +%u)
           echo "当前时间(北京时间): $(date)"
           echo "当前日期: $CURRENT_DATE"
           echo "当前时分: $CURRENT_TIME"
@@ -34,9 +48,21 @@ jobs:
             exit 0
           fi
           
-          # 四班三倒循环计算
+          # 处理跨天班次问题
+          HOUR_NUM=$((10#$CURRENT_HOUR))
+          ADJUSTED_DATE="$CURRENT_DATE"
+          
+          if [ $HOUR_NUM -lt 3 ]; then
+            # 只在00:00-02:59调整日期，处理甲班跨天情况
+            ADJUSTED_DATE=$(date -d "yesterday" +%Y-%m-%d)
+            echo "调整日期为前一天: $ADJUSTED_DATE (处理跨天甲班)"
+          else
+            echo "使用当前日期: $ADJUSTED_DATE"
+          fi
+          
+          # 四班三倒循环计算，使用调整后的日期
           START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
-          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          DAYS_DIFF=$(( ($(date -d "$ADJUSTED_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
           echo "从起始日相差天数: $DAYS_DIFF"
@@ -64,40 +90,96 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 检查是否是丙班（11:00-20:00班次）
-          if [ "$CYCLE_POS" = "3" ]; then
-            echo "✅ 今天是丙班（11:00-20:00），发送泵设备切换提醒"
+          # 检查是否在15:00前后20分钟内
+          SHOULD_REMIND=false
+          TARGET_TIME="15:00"
+          target_total_minutes=$((15 * 60))  # 15:00 = 900分钟
+          current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
+          time_diff=$((current_total_minutes - target_total_minutes))
+          
+          # 前后20分钟窗口
+          if [ $time_diff -ge -20 ] && [ $time_diff -le 20 ]; then
+            SHOULD_REMIND=true
             
-            # 创建标记文件路径，用于记录今天是否已经发送过提醒
-            MARKER_FILE="/tmp/pump_switch_reminder_${CURRENT_DATE}.marker"
-            
-            # 检查是否今天已经发送过提醒
-            if [ -f "$MARKER_FILE" ]; then
-              echo "⏰ 今天已经发送过泵设备切换提醒，跳过重复提醒"
+            if [ $time_diff -lt 0 ]; then
+              TIME_DIRECTION="前"
+              MINUTES_AWAY=$((0 - $time_diff))
+            elif [ $time_diff -gt 0 ]; then
+              TIME_DIRECTION="后" 
+              MINUTES_AWAY=$time_diff
             else
-              echo "✅ 发送泵设备切换提醒"
+              TIME_DIRECTION="正好"
+              MINUTES_AWAY=0
+            fi
+          fi
+          
+          # 检查是否是丙班（11:00-20:00班次）且在上班时间内
+          IS_WORKING_TIME=false
+          if [ "$CYCLE_POS" = "3" ]; then
+            # 丙班 11:00-20:00
+            if [ $HOUR_NUM -ge 11 ] && [ $HOUR_NUM -lt 20 ]; then
+              IS_WORKING_TIME=true
+              echo "✅ 当前在丙班工作时间 (11:00-20:00)"
+            fi
+          fi
+          
+          if [ "$SHOULD_REMIND" = true ]; then
+            echo "⏰ 在提醒时间窗口内: $TARGET_TIME ($TIME_DIRECTION${MINUTES_AWAY}分钟)"
+            
+            if [ "$IS_WORKING_TIME" = true ]; then
+              echo "✅ 今天是丙班且在上班时间，发送泵设备切换提醒"
               
-              # 构建提醒内容
-              CONTENT="🔧 泵设备切换提醒\n\n注意：每月15日，30日11:00班减一泵切至工频泵，运行24小时切回\n⏰ 提醒时间：$CURRENT_TIME\n📅 当前日期：$CURRENT_DATE\n👨‍💼 当前班次：$TODAY_SHIFT\n\n💡 操作要求：\n- 11:00班将减一泵切换至工频泵运行\n- 运行24小时后切回原状态\n- 请确保操作安全规范"
+              # 创建标记文件路径，用于记录今天是否已经发送过提醒
+              MARKER_FILE="/tmp/pump_switch_reminder_${CURRENT_DATE}.marker"
               
-              # 发送钉钉提醒
-              curl -X POST -H "Content-Type: application/json" \
-                -d "{
-                  \"msgtype\": \"text\",
-                  \"text\": {
-                    \"content\": \"$CONTENT\"
-                  },
-                  \"at\": {
-                    \"isAtAll\": false
-                  }
-                }" \
-                "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
-              
-              # 创建标记文件，表示今天已经发送过提醒
-              touch "$MARKER_FILE"
-              echo "✅ 泵设备切换提醒已发送，并创建标记文件防止重复提醒"
+              # 检查是否今天已经发送过提醒
+              if [ -f "$MARKER_FILE" ]; then
+                echo "⏰ 今天已经发送过泵设备切换提醒，跳过重复提醒"
+              else
+                echo "✅ 发送泵设备切换提醒"
+                
+                # 添加星期信息
+                WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
+                WEEK_INDEX=$((CURRENT_WEEK - 1))
+                WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
+                
+                # 构建提醒内容
+                if [ "$TIME_DIRECTION" = "前" ]; then
+                  REMIND_TYPE="⏰ 即将到达切换时段"
+                elif [ "$TIME_DIRECTION" = "后" ]; then
+                  REMIND_TYPE="⏰ 已过切换时段"
+                else
+                  REMIND_TYPE="⏰ 正好在切换时段"
+                fi
+                
+                CONTENT="🔧 泵设备切换提醒\n\n注意：每月15日，30日15:00班减一泵切至工频泵，运行24小时切回\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 当前班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME\n\n💡 操作要求：\n- 15:00班将减一泵切换至工频泵运行\n- 运行24小时后切回原状态\n- 请确保操作安全规范"
+                
+                # 发送钉钉提醒
+                curl -X POST -H "Content-Type: application/json" \
+                  -d "{
+                    \"msgtype\": \"text\",
+                    \"text\": {
+                      \"content\": \"$CONTENT\"
+                    },
+                    \"at\": {
+                      \"isAtAll\": false
+                    }
+                  }" \
+                  "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+                
+                # 创建标记文件，表示今天已经发送过提醒
+                touch "$MARKER_FILE"
+                echo "✅ 泵设备切换提醒已发送，并创建标记文件防止重复提醒"
+              fi
+            else
+              echo "❌ 在提醒时间窗口内，但当前不是丙班或不在上班时间，跳过提醒"
             fi
           else
-            echo "❌ 今天不是丙班（11:00-20:00），不发送泵设备切换提醒"
-            echo "泵设备切换只在每月15日和30日的丙班进行"
+            echo "⏳ 不在提醒时间窗口内 (15:00前后20分钟)"
+            # 如果不在提醒时间窗口内，删除标记文件（如果存在）
+            MARKER_FILE="/tmp/pump_switch_reminder_${CURRENT_DATE}.marker"
+            if [ -f "$MARKER_FILE" ]; then
+              rm "$MARKER_FILE"
+              echo "🗑️ 删除标记文件，准备下一次提醒"
+            fi
           fi
