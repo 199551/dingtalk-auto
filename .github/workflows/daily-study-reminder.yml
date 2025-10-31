@@ -1,7 +1,7 @@
 name: 每日一学提醒
 on:
   schedule:
-    # 每15分钟执行一次，用于检查是否在提醒时间窗口内
+    # 每15分钟执行一次，但检查窗口扩大到20分钟
     - cron: '*/15 0-1,7-8,15-16 * * *'  # UTC时间对应北京时间的8:00、15:00、23:00前后
   workflow_dispatch:
     inputs:
@@ -41,7 +41,6 @@ jobs:
           echo "当前时分: $CURRENT_TIME"
           
           # 处理跨天班次问题
-          # 如果当前时间是00:00-03:00，我们需要检查前一天是否是甲班
           HOUR_NUM=$((10#$CURRENT_HOUR))
           ADJUSTED_DATE="$CURRENT_DATE"
           
@@ -83,14 +82,14 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 定义提醒时间点配置（8:00、15:00、23:00前后15分钟）
+          # 定义提醒时间点配置（8:00、15:00、23:00前后20分钟）
           declare -A REMINDER_TIMES=(
             ["08:00"]="📚 每日一学提醒"
             ["15:00"]="📚 每日一学提醒" 
             ["23:00"]="📚 每日一学提醒"
           )
           
-          # 检查是否在提醒时间点的前后15分钟内
+          # 检查是否在提醒时间点的前后20分钟内
           SHOULD_REMIND=false
           TARGET_TIME=""
           REMINDER_CONTENT=""
@@ -105,8 +104,8 @@ jobs:
             current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
             time_diff=$((current_total_minutes - target_total_minutes))
             
-            # 前后15分钟窗口
-            if [ $time_diff -ge -15 ] && [ $time_diff -le 15 ]; then
+            # 前后20分钟窗口（扩大窗口确保覆盖）
+            if [ $time_diff -ge -20 ] && [ $time_diff -le 20 ]; then
               SHOULD_REMIND=true
               TARGET_TIME=$time_key
               REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
