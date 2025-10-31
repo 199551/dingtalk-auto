@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 企安e学提醒
-        env:
-          DINGTALK_TOKEN: ${{ secrets.DINGTALK_TOKEN }}
         run: |
           # 设置时区
           export TZ='Asia/Shanghai'
@@ -75,7 +73,7 @@ jobs:
               # 构建完整消息
               FULL_CONTENT="📚 工作提醒\n$REMINDER_CONTENT\n⏰ 提醒时间：$CURRENT_TIME\n📅 当前日期：$CURRENT_DATE"
               
-              # 发送钉钉提醒
+              # 发送钉钉提醒（使用你提供的直接URL）
               curl -X POST -H "Content-Type: application/json" \
                 -d "{
                   \"msgtype\": \"text\",
@@ -83,7 +81,7 @@ jobs:
                     \"content\": \"$FULL_CONTENT\"
                   }
                 }" \
-                "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+                "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
               
               # 创建标记文件，表示今天已经发送过提醒
               touch "$MARKER_FILE"
