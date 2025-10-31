@@ -84,9 +84,9 @@ jobs:
           
           # 定义提醒时间点配置（8:00、15:00、1:00前后30分钟）
           declare -A REMINDER_TIMES=(
-            ["08:00"]="📚 每日一学提醒"
-            ["15:00"]="📚 每日一学提醒" 
-            ["01:00"]="📚 每日一学提醒"
+            ["08:00"]="每日一学提醒"
+            ["15:00"]="每日一学提醒" 
+            ["01:00"]="每日一学提醒"
           )
           
           # 检查是否在提醒时间点的前后30分钟内
@@ -178,7 +178,7 @@ jobs:
                 REMIND_TYPE="⏰ 正好在提醒时段"
               fi
               
-              CONTENT="$REMINDER_CONTENT\n\n请及时将今日学习内容发送至班长钉钉\n$REMIND_TYPE\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n🎯 目标时间：$TARGET_TIME\n⏱️ 当前时间：$CURRENT_TIME\n\n⚠️ 注意事项：\n- 请及时在线编辑并提交\n- 确保内容准确完整"
+              CONTENT="每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n⏱️ 距离下班：约-21分钟\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
               
               # 发送钉钉提醒
               curl -X POST -H "Content-Type: application/json" \
