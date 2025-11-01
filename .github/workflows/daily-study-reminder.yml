@@ -1,8 +1,8 @@
 name: 每日一学提醒
 on:
   schedule:
-    # 每15分钟执行一次，扩大执行窗口确保完全覆盖
-    - cron: '*/15 22-23,0-1,6-9,16-17 * * *'  # UTC时间对应北京时间的6-9点、14-17点、0-1点
+    # 每天北京时间8:00执行一次
+    - cron: '0 0 * * *'  # UTC时间0:00对应北京时间8:00
   workflow_dispatch:
     inputs:
       test_time:
@@ -82,50 +82,10 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 定义提醒时间点配置（8:00、15:00、1:00前后30分钟）
-          declare -A REMINDER_TIMES=(
-            ["08:00"]="每日一学提醒"
-            ["15:00"]="每日一学提醒" 
-            ["01:00"]="每日一学提醒"
-          )
+          # 创建一个标记文件路径，用于记录今天是否已经发送过提醒
+          MARKER_FILE="/tmp/daily_study_reminder_${CURRENT_DATE}.marker"
           
-          # 检查是否在提醒时间点的前后30分钟内
-          SHOULD_REMIND=false
-          TARGET_TIME=""
-          REMINDER_CONTENT=""
-          TIME_DIRECTION=""
-          MINUTES_AWAY=0
-          
-          for time_key in "${!REMINDER_TIMES[@]}"; do
-            target_hour=$(echo $time_key | cut -d: -f1)
-            target_minute=$(echo $time_key | cut -d: -f2)
-            
-            target_total_minutes=$((10#$target_hour * 60 + 10#$target_minute))
-            current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
-            time_diff=$((current_total_minutes - target_total_minutes))
-            
-            # 前后30分钟窗口（扩大窗口确保覆盖）
-            if [ $time_diff -ge -30 ] && [ $time_diff -le 30 ]; then
-              SHOULD_REMIND=true
-              TARGET_TIME=$time_key
-              REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
-              
-              if [ $time_diff -lt 0 ]; then
-                TIME_DIRECTION="前"
-                MINUTES_AWAY=$((0 - $time_diff))
-              elif [ $time_diff -gt 0 ]; then
-                TIME_DIRECTION="后" 
-                MINUTES_AWAY=$time_diff
-              else
-                TIME_DIRECTION="正好"
-                MINUTES_AWAY=0
-              fi
-              
-              break
-            fi
-          done
-          
-          # 判断当前是否在上班时间内
+          # 检查是否在上班时间
           IS_WORKING_TIME=false
           
           if [ "$IS_WORKING" = true ]; then
@@ -151,34 +111,23 @@ jobs:
             esac
           fi
           
-          # 创建一个标记文件路径，用于记录今天是否已经发送过提醒
-          MARKER_FILE="/tmp/daily_study_reminder_${CURRENT_DATE}.marker"
-          
           # 检查是否满足所有发送条件
-          if [ "$SHOULD_REMIND" = true ] && [ "$IS_WORKING_TIME" = true ]; then
-            echo "⏰ 在提醒时间窗口内: $TARGET_TIME ($TIME_DIRECTION${MINUTES_AWAY}分钟)"
+          if [ "$IS_WORKING_TIME" = true ]; then
+            echo "✅ 当前在上班时间"
             
             # 检查是否今天已经发送过提醒
             if [ -f "$MARKER_FILE" ]; then
               echo "⏰ 今天已经发送过每日一学提醒，跳过重复提醒"
             else
-              echo "✅ 当前在上班时间，发送每日一学提醒..."
+              echo "✅ 发送每日一学提醒..."
               
               # 添加星期信息
               WEEK_DAYS=("周一" "周二" "周三" "周四" "周五" "周六" "周日")
               WEEK_INDEX=$((CURRENT_WEEK - 1))
               WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
               
-              # 构建提醒内容
-              if [ "$TIME_DIRECTION" = "前" ]; then
-                REMIND_TYPE="⏰ 即将到达提醒时段"
-              elif [ "$TIME_DIRECTION" = "后" ]; then
-                REMIND_TYPE="⏰ 已过提醒时段"
-              else
-                REMIND_TYPE="⏰ 正好在提醒时段"
-              fi
-              
-              CONTENT="每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n⏱️ 距离下班：约-21分钟\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
+              # 构建提醒内容（移除了距离下班时间）
+              CONTENT="每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
               
               # 发送钉钉提醒
               curl -X POST -H "Content-Type: application/json" \
@@ -198,11 +147,9 @@ jobs:
               echo "✅ 每日一学提醒已发送，并创建标记文件防止重复提醒"
             fi
           else
-            echo "❌ 不满足发送提醒条件:"
-            echo "   在提醒时间窗口: $SHOULD_REMIND"
-            echo "   在上班时间: $IS_WORKING_TIME"
+            echo "❌ 当前不在上班时间，不发送提醒"
             
-            # 如果不在提醒条件内，删除标记文件（如果存在）
+            # 如果不在上班时间，删除标记文件（如果存在）
             if [ -f "$MARKER_FILE" ]; then
               rm "$MARKER_FILE"
               echo "🗑️ 删除标记文件，准备下一次提醒"
