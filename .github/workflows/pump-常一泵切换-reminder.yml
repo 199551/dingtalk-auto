@@ -3,7 +3,7 @@ name: 常一泵切换提醒
 on:
   schedule:
     # 每15分钟执行一次，覆盖7:40-8:20窗口
-    - cron: '*/15 23-0 * * *'  # UTC时间23-0点 = 北京时间7-8点
+    - cron: '*/15 23,0 * * *'  # UTC时间23点和0点 = 北京时间7-8点
   workflow_dispatch:
     inputs:
       test_date:
