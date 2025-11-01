@@ -1,4 +1,5 @@
 name: 上副班提醒
+
 on:
   schedule:
     - cron: '*/10 2-3 * * 5,0'   # 星期五和星期日的UTC 2-3点 (北京时间10-11点)
@@ -13,6 +14,9 @@ jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
       - name: 设置环境变量
         id: setup
         run: |
@@ -36,16 +40,14 @@ jobs:
           
           # 只在真正跨天的时间段（00:00-02:59）调整日期
           if [ $HOUR_NUM -lt 3 ]; then
-            # 00:00-02:59 属于前一天的甲班
             ADJUSTED_DATE=$(date -d "yesterday" +%Y-%m-%d)
             echo "调整日期为前一天: $ADJUSTED_DATE (处理跨天甲班)"
           else
-            # 03:00-23:59 使用当前日期
             echo "使用当前日期: $ADJUSTED_DATE"
           fi
           
           # 四班三倒循环计算，使用调整后的日期
-          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          START_DATE="2025-10-27"
           DAYS_DIFF=$(( ($(date -d "$ADJUSTED_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
           CYCLE_POS=$((DAYS_DIFF % 4))
           
@@ -56,19 +58,15 @@ jobs:
           case $CYCLE_POS in
             0)
               TODAY_SHIFT="甲班 20:00-03:00"
-              IS_WORKING=true
               ;;
             1)
               TODAY_SHIFT="休班"
-              IS_WORKING=false
               ;;
             2)
               TODAY_SHIFT="乙班 03:00-11:00"
-              IS_WORKING=true
               ;;
             3)
               TODAY_SHIFT="丙班 11:00-20:00"
-              IS_WORKING=true
               ;;
           esac
           
@@ -85,7 +83,7 @@ jobs:
           TOMORROW_WEEK=$(date -d "$TOMORROW_DATE" +%u)
           TOMORROW_DAY_NAME=$(date -d "$TOMORROW_DATE" +%A)
           
-          # 计算明天的班次 (周期位置加1)
+          # 计算明天的班次
           TOMORROW_CYCLE_POS=$(( (CYCLE_POS + 1) % 4 ))
           case $TOMORROW_CYCLE_POS in
             0)
@@ -106,7 +104,7 @@ jobs:
           echo "明天星期: $TOMORROW_WEEK ($TOMORROW_DAY_NAME)"
           echo "明天班次: $TOMORROW_SHIFT"
           
-          # 检查明天是否需要上副班（明天是丙班且是星期六或星期一）
+          # 检查明天是否需要上副班
           TOMORROW_NEEDS_SUB_SHIFT=false
           if [ $TOMORROW_CYCLE_POS -eq 3 ] && ([ $TOMORROW_WEEK -eq 6 ] || [ $TOMORROW_WEEK -eq 1 ]); then
             TOMORROW_NEEDS_SUB_SHIFT=true
@@ -115,7 +113,7 @@ jobs:
             echo "明天不需要上副班"
           fi
           
-          # 检查是否在提醒时间窗口内 (10:00前后1小时)
+          # 检查是否在提醒时间窗口内
           SHOULD_REMIND=false
           TARGET_HOUR="10"
           TARGET_MINUTE="00"
@@ -124,10 +122,8 @@ jobs:
           target_total_minutes=$((10#$TARGET_HOUR * 60 + 10#$TARGET_MINUTE))
           time_diff=$((current_total_minutes - target_total_minutes))
           
-          # 前后60分钟窗口
           if [ $time_diff -ge -60 ] && [ $time_diff -le 60 ]; then
             SHOULD_REMIND=true
-            
             if [ $time_diff -lt 0 ]; then
               TIME_DIRECTION="前"
               MINUTES_AWAY=$((0 - $time_diff))
@@ -153,7 +149,7 @@ jobs:
       - name: 发送提醒
         if: steps.setup.outputs.tomorrow_needs_sub_shift == 'true' && steps.setup.outputs.should_remind == 'true'
         env:
-          DINGTALK_TOKEN: ${{ secrets.DINGTALK_TOKEN }}
+          DINGTALK_TOKEN: c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc
         run: |
           echo "⏰ 在提醒时间窗口内: 10:00 (${{ steps.setup.outputs.time_direction }}${{ steps.setup.outputs.minutes_away }}分钟)"
           echo "📅 检测到明天需要上副班，发送提醒"
@@ -164,10 +160,10 @@ jobs:
             DAY_NAME="星期一"
           fi
           
-          # 构建完整内容
+          # 构建消息内容
           MESSAGE="📢 上副班提醒\n\n明天（$DAY_NAME）需要上副班\n⏰ 工作时间：11:00-20:00\n📅 日期：${{ steps.setup.outputs.tomorrow_date }}\n👨‍💼 今日班次：${{ steps.setup.outputs.today_shift }}\n👨‍💼 明日班次：${{ steps.setup.outputs.tomorrow_shift }}\n🎯 请提前做好准备！\n\n⏱️ 提醒时间：$(date +%Y-%m-%d\ %H:%M)"
           
-          # 发送钉钉提醒
+          # 发送钉钉提醒 - 使用您指定的地址
           curl -X POST -H "Content-Type: application/json" \
             -d "{
               \"msgtype\": \"text\",
@@ -178,3 +174,10 @@ jobs:
             "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
           
           echo "✅ 副班提醒已发送"
+
+      - name: 跳过提醒记录
+        if: steps.setup.outputs.tomorrow_needs_sub_shift != 'true' || steps.setup.outputs.should_remind != 'true'
+        run: |
+          echo "⏳ 跳过提醒 - 条件不满足"
+          echo "明天需要副班: ${{ steps.setup.outputs.tomorrow_needs_sub_shift }}"
+          echo "在时间窗口: ${{ steps.setup.outputs.should_remind }}"
