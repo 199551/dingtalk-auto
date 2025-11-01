@@ -1,0 +1,56 @@
+name: 隐患排查月度提醒
+on:
+  schedule:
+    # 每月22日上午9:00执行 (UTC+8 北京时间)
+    - cron: '0 1 22 * *'  # 每月22号 UTC 1:00 = 北京时间9:00
+  workflow_dispatch:  # 允许手动触发测试
+    inputs:
+      test_month:
+        description: '测试月份 (YYYY-MM)'
+        required: false
+        default: ''
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发送隐患排查月度提醒
+        env:
+          DINGTALK_TOKEN: c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc
+        run: |
+          # 设置时区
+          export TZ='Asia/Shanghai'
+          
+          # 处理手动输入的测试月份
+          if [ -n "${{ github.event.inputs.test_month }}" ]; then
+            TEST_MONTH="${{ github.event.inputs.test_month }}"
+            echo "使用测试月份: $TEST_MONTH"
+            CURRENT_YEAR=$(echo $TEST_MONTH | cut -d'-' -f1)
+            CURRENT_MONTH=$(echo $TEST_MONTH | cut -d'-' -f2)
+          else
+            CURRENT_YEAR=$(date +%Y)
+            CURRENT_MONTH=$(date +%m)
+          fi
+          
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          echo "执行时间: $(date)"
+          echo "当前年月: $CURRENT_YEAR-$CURRENT_MONTH"
+          
+          # 构建提醒内容
+          MESSAGE="🔍 **隐患排查月度提醒**\n\n📅 月份：$CURRENT_YEAR年$CURRENT_MONTH月\n📝 要求：每月最少完成1条隐患排查\n⏰ 提醒时间：$CURRENT_DATE\n💡 请及时完成并上报隐患排查记录"
+          
+          # 发送钉钉提醒
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{
+              \"msgtype\": \"markdown\",
+              \"markdown\": {
+                \"title\": \"隐患排查月度提醒\",
+                \"text\": \"$MESSAGE\"
+              },
+              \"at\": {
+                \"isAtAll\": false
+              }
+            }" \
+            "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
+          
+          echo "✅ 隐患排查月度提醒已发送"
