@@ -100,7 +100,7 @@ jobs:
             ["22:00"]="🕙 注意：线上巡检按时进行"
           )
           
-          # 检查是否在提醒时间点的前后10分钟内
+          # 检查是否在提醒时间点的前后15分钟内
           SHOULD_REMIND=false
           TARGET_TIME=""
           REMINDER_CONTENT=""
@@ -115,8 +115,8 @@ jobs:
             current_total_minutes=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MINUTE))
             time_diff=$((current_total_minutes - target_total_minutes))
             
-            # 前后10分钟窗口
-            if [ $time_diff -ge -10 ] && [ $time_diff -le 10 ]; then
+            # 前后15分钟窗口（修改这里：将10改为15）
+            if [ $time_diff -ge -15 ] && [ $time_diff -le 15 ]; then
               SHOULD_REMIND=true
               TARGET_TIME=$time_key
               REMINDER_CONTENT="${REMINDER_TIMES[$time_key]}"
@@ -174,9 +174,9 @@ jobs:
               
               # 构建完整的提醒内容
               if [ "$TIME_DIRECTION" = "前" ]; then
-                REMIND_TYPE="⏰ 即将到达巡检时段"
+                REMIND_TYPE="⏰ 即将到达巡检时段（前15分钟提醒）"
               elif [ "$TIME_DIRECTION" = "后" ]; then
-                REMIND_TYPE="⏰ 已过巡检时段"
+                REMIND_TYPE="⏰ 已过巡检时段（后15分钟提醒）"
               else
                 REMIND_TYPE="⏰ 正好在巡检时段"
               fi
