@@ -1,8 +1,8 @@
 name: 每日一学提醒
 on:
   schedule:
-    # 每天北京时间8:00执行一次
-    - cron: '0 0 * * *'  # UTC时间0:00对应北京时间8:00
+    # 每天北京时间8:00、17:00、23:00各执行一次
+    - cron: '0 0,9,15 * * *'  # UTC时间0:00,9:00,15:00对应北京时间8:00,17:00,23:00
   workflow_dispatch:
     inputs:
       test_time:
@@ -82,8 +82,8 @@ jobs:
           
           echo "今日班次: $TODAY_SHIFT"
           
-          # 创建一个标记文件路径，用于记录今天是否已经发送过提醒
-          MARKER_FILE="/tmp/daily_study_reminder_${CURRENT_DATE}.marker"
+          # 创建一个标记文件路径，用于记录今天每个时间点是否已经发送过提醒
+          MARKER_FILE="/tmp/daily_study_reminder_${CURRENT_DATE}_${CURRENT_HOUR}.marker"
           
           # 检查是否在上班时间
           IS_WORKING_TIME=false
@@ -115,9 +115,9 @@ jobs:
           if [ "$IS_WORKING_TIME" = true ]; then
             echo "✅ 当前在上班时间"
             
-            # 检查是否今天已经发送过提醒
+            # 检查是否今天这个时间点已经发送过提醒
             if [ -f "$MARKER_FILE" ]; then
-              echo "⏰ 今天已经发送过每日一学提醒，跳过重复提醒"
+              echo "⏰ 今天这个时间点已经发送过每日一学提醒，跳过重复提醒"
             else
               echo "✅ 发送每日一学提醒..."
               
@@ -126,8 +126,24 @@ jobs:
               WEEK_INDEX=$((CURRENT_WEEK - 1))
               WEEK_INFO="${WEEK_DAYS[$WEEK_INDEX]}"
               
-              # 构建提醒内容（移除了距离下班时间）
-              CONTENT="每日一学提醒\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
+              # 根据当前时间设置不同的提醒内容
+              case $CURRENT_HOUR in
+                "08")
+                  REMINDER_TYPE="早上提醒"
+                  ;;
+                "17")
+                  REMINDER_TYPE="下午提醒"
+                  ;;
+                "23")
+                  REMINDER_TYPE="晚间提醒"
+                  ;;
+                *)
+                  REMINDER_TYPE="提醒"
+                  ;;
+              esac
+              
+              # 构建提醒内容
+              CONTENT="每日一学${REMINDER_TYPE}\n\n请及时将今日学习内容发送至班长钉钉\n⏰ 提醒时间：$CURRENT_TIME\n📅 $CURRENT_DATE $WEEK_INFO\n👨‍💼 今日班次：$TODAY_SHIFT\n\n⚠️ 注意事项：\n- 下班前30分钟未发送，不再接收\n- 请及时在线编辑并提交\n- 确保内容准确完整"
               
               # 发送钉钉提醒
               curl -X POST -H "Content-Type: application/json" \
@@ -142,14 +158,14 @@ jobs:
                 }" \
                 "https://oapi.dingtalk.com/robot/send?access_token=$DINGTALK_TOKEN"
               
-              # 创建标记文件，表示今天已经发送过提醒
+              # 创建标记文件，表示今天这个时间点已经发送过提醒
               touch "$MARKER_FILE"
               echo "✅ 每日一学提醒已发送，并创建标记文件防止重复提醒"
             fi
           else
             echo "❌ 当前不在上班时间，不发送提醒"
             
-            # 如果不在上班时间，删除标记文件（如果存在）
+            # 如果不在上班时间，删除当前时间点的标记文件（如果存在）
             if [ -f "$MARKER_FILE" ]; then
               rm "$MARKER_FILE"
               echo "🗑️ 删除标记文件，准备下一次提醒"
