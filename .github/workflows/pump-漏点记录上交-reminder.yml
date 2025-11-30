@@ -1,7 +1,7 @@
 name: 月度漏点巡检提醒
 on:
   schedule:
-    # 每月1日上午8:30执行 (UTC+8 北京时间)
+    # 每月1日北京时间8:30执行
     - cron: '30 0 1 * *'  # 每月1号 UTC 0:30 = 北京时间8:30
   workflow_dispatch:  # 允许手动触发测试
 jobs:
@@ -10,18 +10,124 @@ jobs:
     steps:
       - name: 发送漏点巡检提醒
         run: |
-          # 获取当前小时
-          CURRENT_HOUR=$(date +%H)
-          echo "当前时间: $(date)"
-          echo "当前小时: $CURRENT_HOUR"
+          # 设置时区为北京时间
+          export TZ='Asia/Shanghai'
           
-          # 判断当前是否在上班（上午8:30在3:00-11:00班次）
-          if [ "$CURRENT_HOUR" = "08" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "当前是上午8:30，正在上3:00-11:00班次，发送提醒..."
-            
-            curl -X POST -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"注意：漏点巡检每月1日3:00班下班前上交给设备员。"}}' "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
-            
-            echo "提醒消息已发送"
+          # 获取当前日期和时间
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          CURRENT_DAY=$(date +%d)
+          CURRENT_HOUR=$(date +%H)
+          CURRENT_MINUTE=$(date +%M)
+          CURRENT_TIME=$(date +%H:%M)
+          
+          echo "当前时间(北京时间): $(date)"
+          echo "当前日期: $CURRENT_DATE"
+          echo "当前时间: $CURRENT_TIME"
+          
+          # 判断今天是否是每月1日
+          IS_FIRST_DAY=false
+          if [ "$CURRENT_DAY" = "01" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            IS_FIRST_DAY=true
+            echo "✅ 今天是每月1日或手动触发"
           else
-            echo "当前不是上午8:30，不在3:00-11:00班次工作时间，跳过发送"
+            echo "❌ 今天不是每月1日，跳过发送"
+            exit 0
+          fi
+          
+          # 四班三倒循环计算
+          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          CYCLE_POS=$((DAYS_DIFF % 4))
+          
+          echo "从起始日相差天数: $DAYS_DIFF"
+          echo "周期位置: $CYCLE_POS (0=甲班, 1=休班, 2=乙班, 3=丙班)"
+          
+          # 判断今日班次
+          case $CYCLE_POS in
+            0)
+              TODAY_SHIFT="甲班 20:00-03:00"
+              ;;
+            1)
+              TODAY_SHIFT="休班"
+              ;;
+            2)
+              TODAY_SHIFT="乙班 03:00-11:00"
+              ;;
+            3)
+              TODAY_SHIFT="丙班 11:00-20:00"
+              ;;
+          esac
+          
+          echo "今日班次: $TODAY_SHIFT"
+          
+          # 检查当前是否在乙班工作时间 (03:00-11:00)
+          IS_YI_SHIFT=false
+          if [ $CYCLE_POS -eq 2 ]; then
+            HOUR_NUM=$((10#$CURRENT_HOUR))
+            if [ $HOUR_NUM -ge 3 ] && [ $HOUR_NUM -lt 11 ]; then
+              IS_YI_SHIFT=true
+              echo "✅ 当前在乙班工作时间 (03:00-11:00)"
+            else
+              echo "❌ 当前不在乙班工作时间"
+            fi
+          else
+            echo "❌ 今日不是乙班"
+          fi
+          
+          # 检查是否在上午8:30前后 (固定8:30执行，这里检查时间窗口)
+          IS_830_WINDOW=false
+          CURRENT_TIME_NUM=$((10#$CURRENT_HOUR * 100 + 10#$CURRENT_MINUTE))
+          
+          # 由于cron设置为8:30执行，这里检查是否在8:30附近
+          if [ $CURRENT_TIME_NUM -ge 830 ] && [ $CURRENT_TIME_NUM -le 900 ]; then
+            IS_830_WINDOW=true
+            echo "✅ 当前在上午8:30时间窗口内"
+          else
+            echo "❌ 当前不在上午8:30时间窗口内"
+          fi
+          
+          # 创建标记文件路径，用于记录今天是否已经发送过提醒
+          MARKER_FILE="/tmp/leak_check_reminder_${CURRENT_DATE}.marker"
+          
+          # 发送提醒的条件：每月1日、乙班工作时间、在8:30时间窗口内、且今天还未发送过
+          if [ "$IS_FIRST_DAY" = true ] && [ "$IS_YI_SHIFT" = true ] && [ "$IS_830_WINDOW" = true ]; then
+            if [ -f "$MARKER_FILE" ]; then
+              echo "⏰ 今天已经发送过月度漏点巡检提醒，跳过重复提醒"
+            else
+              echo "✅ 满足所有发送条件，发送月度漏点巡检提醒..."
+              
+              # 使用指定的提醒内容
+              CONTENT="注意：漏点巡检每月1日3:00班下班前上交给设备员。"
+              
+              curl -X POST \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"msgtype\": \"text\",
+                \"text\": {
+                  \"content\": \"$CONTENT\"
+                }
+              }" \
+              "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+              
+              # 创建标记文件，表示今天已经发送过提醒
+              touch "$MARKER_FILE"
+              echo "✅ 月度漏点巡检提醒已发送，并创建标记文件防止重复提醒"
+            fi
+          else
+            echo "❌ 不满足发送条件："
+            if [ "$IS_FIRST_DAY" != true ]; then
+              echo "  - 今天不是每月1日"
+            fi
+            if [ "$IS_YI_SHIFT" != true ]; then
+              echo "  - 当前不在乙班工作时间"
+            fi
+            if [ "$IS_830_WINDOW" != true ]; then
+              echo "  - 当前不在上午8:30时间窗口内"
+            fi
+            
+            # 如果不在发送条件内，但已经不是1日，删除标记文件
+            if [ -f "$MARKER_FILE" ] && [ "$CURRENT_DAY" != "01" ]; then
+              rm "$MARKER_FILE"
+              echo "🗑️ 删除过期标记文件"
+            fi
           fi
