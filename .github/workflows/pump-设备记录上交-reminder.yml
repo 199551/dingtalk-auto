@@ -1,40 +1,135 @@
 name: 月度设备检查提醒
 on:
   schedule:
-    # 每月最后一天下午3点执行 (UTC+8 北京时间)
-    - cron: '0 7 28-31 * *'  # 每月28-31号 UTC 7:00 = 北京时间15:00
+    # 每月28-31号北京时间14:30、15:00、15:30各执行一次
+    - cron: '30 6,7 28-31 * *'  # UTC时间6:30,7:00,7:30对应北京时间14:30,15:00,15:30
   workflow_dispatch:  # 允许手动触发测试
 jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: 检查是否为当月最后一天并判断班次发送提醒
+      - name: 检查是否为当月最后一天并在下午3点前后提醒
         run: |
-          # 获取当前日期和下一个月的第一天
-          CURRENT_DAY=$(date +%d)
-          NEXT_DAY=$(date -d "tomorrow" +%d)
-          CURRENT_HOUR=$(date +%H)
+          # 设置时区为北京时间
+          export TZ='Asia/Shanghai'
           
-          echo "当前时间: $(date)"
-          echo "今天日期: $CURRENT_DAY"
-          echo "明天日期: $NEXT_DAY"
-          echo "当前小时: $CURRENT_HOUR"
+          # 获取当前日期和时间
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          CURRENT_DAY=$(date +%d)
+          CURRENT_HOUR=$(date +%H)
+          CURRENT_MINUTE=$(date +%M)
+          CURRENT_TIME=$(date +%H:%M)
+          
+          echo "当前时间(北京时间): $(date)"
+          echo "当前日期: $CURRENT_DATE"
+          echo "当前时间: $CURRENT_TIME"
           
           # 判断今天是否是当月最后一天
-          if [ "$NEXT_DAY" = "01" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "今天是当月最后一天或手动触发"
-            
-            # 判断当前是否在上班（下午3点在11:00-20:00班次）
-            if [ "$CURRENT_HOUR" = "15" ]; then
-              echo "当前是下午3点，正在上11:00-20:00班次，发送提醒..."
-              curl -X POST \
-              -H "Content-Type: application/json" \
-              -d '{"msgtype":"text","text":{"content":"注意：机泵盘车、特种设备巡检每月最后一天11：00班下班前上交给设备员。"}}' \
-              "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
-              echo "提醒消息已发送"
+          TOMORROW_MONTH=$(date -d "tomorrow" +%m)
+          CURRENT_MONTH=$(date +%m)
+          IS_LAST_DAY=false
+          
+          if [ "$CURRENT_MONTH" != "$TOMORROW_MONTH" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            IS_LAST_DAY=true
+            echo "✅ 今天是当月最后一天或手动触发"
+          else
+            echo "❌ 今天不是当月最后一天，跳过发送"
+            exit 0
+          fi
+          
+          # 四班三倒循环计算
+          START_DATE="2025-10-27"  # 以2025-10-27为甲班开始
+          DAYS_DIFF=$(( ($(date -d "$CURRENT_DATE" +%s) - $(date -d "$START_DATE" +%s)) / 86400 ))
+          CYCLE_POS=$((DAYS_DIFF % 4))
+          
+          echo "从起始日相差天数: $DAYS_DIFF"
+          echo "周期位置: $CYCLE_POS (0=甲班, 1=休班, 2=乙班, 3=丙班)"
+          
+          # 判断今日班次
+          case $CYCLE_POS in
+            0)
+              TODAY_SHIFT="甲班 20:00-03:00"
+              ;;
+            1)
+              TODAY_SHIFT="休班"
+              ;;
+            2)
+              TODAY_SHIFT="乙班 03:00-11:00"
+              ;;
+            3)
+              TODAY_SHIFT="丙班 11:00-20:00"
+              ;;
+          esac
+          
+          echo "今日班次: $TODAY_SHIFT"
+          
+          # 检查当前是否在丙班工作时间 (11:00-20:00)
+          IS_CI_SHIFT=false
+          if [ $CYCLE_POS -eq 3 ]; then
+            HOUR_NUM=$((10#$CURRENT_HOUR))
+            if [ $HOUR_NUM -ge 11 ] && [ $HOUR_NUM -lt 20 ]; then
+              IS_CI_SHIFT=true
+              echo "✅ 当前在丙班工作时间 (11:00-20:00)"
             else
-              echo "当前不是下午3点，不在11:00-20:00班次工作时间，跳过发送"
+              echo "❌ 当前不在丙班工作时间"
             fi
           else
-            echo "今天不是当月最后一天，跳过发送"
+            echo "❌ 今日不是丙班"
+          fi
+          
+          # 检查是否在下午3点前后半小时内 (14:30-15:30)
+          IS_3PM_WINDOW=false
+          CURRENT_TIME_NUM=$((10#$CURRENT_HOUR * 100 + 10#$CURRENT_MINUTE))
+          
+          if [ $CURRENT_TIME_NUM -ge 1430 ] && [ $CURRENT_TIME_NUM -le 1530 ]; then
+            IS_3PM_WINDOW=true
+            echo "✅ 当前在下午3点前后半小时窗口内 (14:30-15:30)"
+          else
+            echo "❌ 当前不在下午3点前后半小时窗口内"
+          fi
+          
+          # 创建标记文件路径，用于记录今天是否已经发送过提醒
+          MARKER_FILE="/tmp/monthly_check_reminder_${CURRENT_DATE}.marker"
+          
+          # 发送提醒的条件：最后一天、丙班工作时间、在下午3点前后半小时内、且今天还未发送过
+          if [ "$IS_LAST_DAY" = true ] && [ "$IS_CI_SHIFT" = true ] && [ "$IS_3PM_WINDOW" = true ]; then
+            if [ -f "$MARKER_FILE" ]; then
+              echo "⏰ 今天已经发送过月度设备检查提醒，跳过重复提醒"
+            else
+              echo "✅ 满足所有发送条件，发送月度设备检查提醒..."
+              
+              # 使用指定的提醒内容
+              CONTENT="注意：机泵盘车、特种设备巡检每月最后一天11：00班下班前上交给设备员。"
+              
+              curl -X POST \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"msgtype\": \"text\",
+                \"text\": {
+                  \"content\": \"$CONTENT\"
+                }
+              }" \
+              "https://oapi.dingtalk.com/robot/send?access_token=c965583b00a0f7184e546e662b6902b0fdfab31b110d56249a45c7921e28defc"
+              
+              # 创建标记文件，表示今天已经发送过提醒
+              touch "$MARKER_FILE"
+              echo "✅ 月度设备检查提醒已发送，并创建标记文件防止重复提醒"
+            fi
+          else
+            echo "❌ 不满足发送条件："
+            if [ "$IS_LAST_DAY" != true ]; then
+              echo "  - 今天不是当月最后一天"
+            fi
+            if [ "$IS_CI_SHIFT" != true ]; then
+              echo "  - 当前不在丙班工作时间"
+            fi
+            if [ "$IS_3PM_WINDOW" != true ]; then
+              echo "  - 当前不在下午3点前后半小时窗口内"
+            fi
+            
+            # 如果不在发送条件内，但已经是第二天，删除标记文件
+            if [ -f "$MARKER_FILE" ] && [ "$IS_LAST_DAY" != true ]; then
+              rm "$MARKER_FILE"
+              echo "🗑️ 删除过期标记文件"
+            fi
           fi
